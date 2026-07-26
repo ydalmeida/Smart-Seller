@@ -247,7 +247,7 @@ function mostrarApp() {
     lbl.textContent = APP_MODE === 'firebase' ? 'Firebase (nuvem)' : 'local (este navegador)';
     lbl.style.color = APP_MODE === 'firebase' ? 'var(--green, #0a7d4a)' : 'var(--yellow, #c9a227)';
   }
-  if (isAdmin()) renderUsersList();
+  if (isAdmin()) { renderUsersList(); renderSolicitacoes(); }
 }
 function mostrarLogin() {
   $('#loginOverlay').style.display = 'flex';
@@ -285,10 +285,12 @@ async function carregarRoleUsuario(uid, email) {
   try {
     const doc = await firebaseDb.collection('usuarios').doc(uid).get();
     if (doc.exists) {
-      return doc.data().role || 'consultor';
+      return doc.data().role || 'pendente';
     } else {
-      // Cria doc de usuário
-      const role = email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'consultor';
+      // Sem doc no Firestore: se for o admin fixo, aprova direto.
+      // Qualquer outro email vira 'pendente' (fica na fila do Admin) — nunca
+      // aprova automaticamente, para não abrir uma brecha de acesso.
+      const role = email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'pendente';
       await firebaseDb.collection('usuarios').doc(uid).set({
         email, role, criadoEm: firebase.firestore.FieldValue.serverTimestamp()
       });
@@ -296,7 +298,7 @@ async function carregarRoleUsuario(uid, email) {
     }
   } catch (e) {
     console.warn('Erro ao buscar role:', e);
-    return email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'consultor';
+    return email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'pendente';
   }
 }
 
@@ -337,6 +339,16 @@ $('#loginForm').addEventListener('submit', async (e) => {
     try {
       const cred = await firebaseAuth.signInWithEmailAndPassword(email, pass);
       const role = await carregarRoleUsuario(cred.user.uid, cred.user.email);
+      if (role === 'pendente') {
+        await firebaseAuth.signOut();
+        status.textContent = 'Sua conta ainda está aguardando aprovação do administrador.';
+        return;
+      }
+      if (role === 'recusado') {
+        await firebaseAuth.signOut();
+        status.textContent = 'Seu acesso foi recusado pelo administrador.';
+        return;
+      }
       STATE.user = { email: cred.user.email, uid: cred.user.uid, role };
       await carregarDoFirestore();
       mostrarApp();
@@ -379,6 +391,14 @@ $('#loginForm').addEventListener('submit', async (e) => {
   const users = getLocalUsers();
   const u = users.find(x => x.email.toLowerCase() === email.toLowerCase());
   if (u && verificarSenhaLocal(pass, u.senhaHash)) {
+    if (u.role === 'pendente') {
+      status.textContent = 'Sua conta ainda está aguardando aprovação do administrador.';
+      return;
+    }
+    if (u.role === 'recusado') {
+      status.textContent = 'Seu acesso foi recusado pelo administrador.';
+      return;
+    }
     STATE.user = { email, uid: u.id, role: u.role || 'consultor' };
     mostrarApp();
     toast('Bem-vindo, Consultor! (modo local)', 'success');
@@ -388,13 +408,92 @@ $('#loginForm').addEventListener('submit', async (e) => {
   if (u) {
     status.textContent = 'Senha incorreta.';
   } else {
-    status.textContent = 'Usuário não encontrado. Contate o administrador para criar sua conta.';
+    status.textContent = 'Usuário não encontrado. Clique em "Solicitar acesso" para criar sua conta.';
   }
 });
 
 $('#btnCriarConta').addEventListener('click', (e) => {
   e.preventDefault();
-  toast('Apenas o administrador pode criar usuários. Contate diogokarita547@gmail.com para solicitar acesso.', 'info', 6000);
+  $('#loginForm').closest('.login-box').style.display = 'none';
+  $('#signupBox').style.display = '';
+  $('#loginStatus').textContent = '';
+});
+$('#btnVoltarLogin').addEventListener('click', (e) => {
+  e.preventDefault();
+  $('#signupBox').style.display = 'none';
+  $('#loginForm').closest('.login-box').style.display = '';
+  $('#signupStatus').textContent = '';
+});
+
+// =========================================================
+// SOLICITAÇÃO DE ACESSO (autocadastro de consultor + aprovação do Admin)
+// O consultor cria a própria conta com email/senha, mas ela nasce com
+// role 'pendente' — sem acesso ao sistema — até o Admin aprovar em Configurações.
+// =========================================================
+$('#signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const nome = $('#suNome').value.trim();
+  const email = $('#suEmail').value.trim();
+  const setor = $('#suSetor').value.trim();
+  const pass = $('#suSenha').value;
+  const status = $('#signupStatus');
+
+  if (!nome || !email || pass.length < 6) {
+    status.textContent = 'Preencha nome, email e senha (mínimo 6 caracteres).';
+    return;
+  }
+  if (email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    status.textContent = 'Este email já é o do administrador.';
+    return;
+  }
+  status.textContent = 'Enviando solicitação…';
+
+  const firebaseOk = initFirebase() && firebaseAuth;
+  APP_MODE = firebaseOk ? 'firebase' : 'local';
+
+  if (firebaseOk) {
+    try {
+      const cred = await firebaseAuth.createUserWithEmailAndPassword(email, pass);
+      await firebaseDb.collection('usuarios').doc(cred.user.uid).set({
+        email, nome, setor: setor || null,
+        role: 'pendente',
+        criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await firebaseAuth.signOut(); // não deixa entrar enquanto estiver pendente
+      status.textContent = '';
+      toast('Solicitação enviada! Aguarde o administrador aprovar seu acesso.', 'success', 6000);
+      $('#signupForm').reset();
+      $('#btnVoltarLogin').click();
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') {
+        status.textContent = 'Já existe uma conta (ou solicitação) com este email.';
+      } else if (err.code === 'auth/weak-password') {
+        status.textContent = 'Senha muito fraca — use ao menos 6 caracteres.';
+      } else {
+        status.textContent = err.message;
+      }
+    }
+    return;
+  }
+
+  // ===== MODO LOCAL =====
+  const users = getLocalUsers();
+  if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
+    status.textContent = 'Já existe uma conta (ou solicitação) com este email.';
+    return;
+  }
+  users.push({
+    id: getId(),
+    email, nome, setor: setor || null,
+    role: 'pendente',
+    senhaHash: ofuscarSenha(pass),
+    criadoEm: new Date().toISOString()
+  });
+  setLocalUsers(users);
+  status.textContent = '';
+  toast('Solicitação enviada! Aguarde o administrador aprovar seu acesso (neste navegador).', 'success', 6000);
+  $('#signupForm').reset();
+  $('#btnVoltarLogin').click();
 });
 
 $('#btnSair').addEventListener('click', async () => {
@@ -1030,6 +1129,103 @@ $('#btnCriarUser').addEventListener('click', async (e) => {
   renderUsersList();
 });
 
+// =========================================================
+// SOLICITAÇÕES DE ACESSO PENDENTES (só Admin aprova/recusa)
+// =========================================================
+function atualizarBadgePendentes(qtd) {
+  const badge = $('#pendingBadge');
+  if (!badge) return;
+  if (qtd > 0) { badge.textContent = qtd; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+
+async function renderSolicitacoes() {
+  const box = $('#solicitacoesList');
+  if (!box || !isAdmin()) return;
+
+  // MODO FIREBASE
+  if (APP_MODE === 'firebase' && firebaseDb) {
+    try {
+      const snap = await firebaseDb.collection('usuarios').where('role', '==', 'pendente').get();
+      if (snap.empty) {
+        box.innerHTML = '<p class="muted">Nenhuma solicitação pendente.</p>';
+        atualizarBadgePendentes(0);
+        return;
+      }
+      let html = '<table class="smart-table"><thead><tr><th>Nome</th><th>Email</th><th>Setor/Cargo</th><th></th></tr></thead><tbody>';
+      snap.forEach(d => {
+        const u = d.data();
+        html += `<tr>
+          <td>${u.nome || '—'}</td>
+          <td>${u.email}</td>
+          <td class="muted">${u.setor || '—'}</td>
+          <td style="display:flex;gap:6px">
+            <button class="btn-primary" style="padding:6px 10px;font-size:12px" data-aprovar="${d.id}"><i class="fa-solid fa-check"></i> Aprovar</button>
+            <button class="row-actions-cell" data-recusar="${d.id}" title="Recusar"><i class="fa-solid fa-xmark"></i></button>
+          </td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      box.innerHTML = html;
+      atualizarBadgePendentes(snap.size);
+
+      $$('[data-aprovar]').forEach(b => b.addEventListener('click', async () => {
+        await firebaseDb.collection('usuarios').doc(b.dataset.aprovar).update({ role: 'consultor' });
+        toast('Consultor aprovado!', 'success');
+        renderSolicitacoes(); renderUsersList();
+      }));
+      $$('[data-recusar]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Recusar esta solicitação de acesso?')) return;
+        await firebaseDb.collection('usuarios').doc(b.dataset.recusar).update({ role: 'recusado' });
+        toast('Solicitação recusada.', 'info');
+        renderSolicitacoes();
+      }));
+    } catch (e) {
+      box.innerHTML = '<p class="muted">Erro ao carregar solicitações.</p>';
+    }
+    return;
+  }
+
+  // MODO LOCAL
+  const users = getLocalUsers();
+  const pendentes = users.filter(u => u.role === 'pendente');
+  if (!pendentes.length) {
+    box.innerHTML = '<p class="muted">Nenhuma solicitação pendente.</p>';
+    atualizarBadgePendentes(0);
+    return;
+  }
+  let html = '<table class="smart-table"><thead><tr><th>Nome</th><th>Email</th><th>Setor/Cargo</th><th></th></tr></thead><tbody>';
+  pendentes.forEach(u => {
+    html += `<tr>
+      <td>${u.nome || '—'}</td>
+      <td>${u.email}</td>
+      <td class="muted">${u.setor || '—'}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn-primary" style="padding:6px 10px;font-size:12px" data-aprovar-local="${u.id}"><i class="fa-solid fa-check"></i> Aprovar</button>
+        <button class="row-actions-cell" data-recusar-local="${u.id}" title="Recusar"><i class="fa-solid fa-xmark"></i></button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+  atualizarBadgePendentes(pendentes.length);
+
+  $$('[data-aprovar-local]').forEach(b => b.addEventListener('click', () => {
+    const list = getLocalUsers();
+    const u = list.find(x => x.id === b.dataset.aprovarLocal);
+    if (u) u.role = 'consultor';
+    setLocalUsers(list);
+    toast('Consultor aprovado!', 'success');
+    renderSolicitacoes(); renderUsersList();
+  }));
+  $$('[data-recusar-local]').forEach(b => b.addEventListener('click', () => {
+    if (!confirm('Recusar esta solicitação de acesso?')) return;
+    setLocalUsers(getLocalUsers().filter(x => x.id !== b.dataset.recusarLocal));
+    toast('Solicitação recusada.', 'info');
+    renderSolicitacoes();
+  }));
+}
+
 async function renderUsersList() {
   const box = $('#usersList');
   // MODO FIREBASE: lista do Firestore
@@ -1046,6 +1242,7 @@ async function renderUsersList() {
       if (!snap.empty) {
         snap.forEach(d => {
           const u = d.data();
+          if (u.role === 'pendente' || u.role === 'recusado') return; // aparecem no painel de solicitações
           html += `<tr>
             <td>${u.email}</td>
             <td><span class="role-badge ${u.role === 'admin' ? 'role-admin' : 'role-consultor'}">${u.role}</span></td>
@@ -1070,8 +1267,9 @@ async function renderUsersList() {
     <td class="muted">sistema</td>
     <td class="muted">fixo</td>
   </tr>`;
-  if (users.length) {
-    users.forEach(u => {
+  const aprovados = users.filter(u => u.role !== 'pendente' && u.role !== 'recusado');
+  if (aprovados.length) {
+    aprovados.forEach(u => {
       html += `<tr>
         <td>${u.email}</td>
         <td><span class="role-badge role-consultor">${u.role}</span></td>
@@ -1162,6 +1360,15 @@ $('#btnExportar').addEventListener('click', async () => {
       firebaseAuth.onAuthStateChanged(async user => {
         if (user) {
           const role = await carregarRoleUsuario(user.uid, user.email);
+          if (role === 'pendente' || role === 'recusado') {
+            // Sessão de uma conta ainda não aprovada (ou recusada): não deixa entrar.
+            await firebaseAuth.signOut();
+            mostrarLogin();
+            $('#loginStatus').textContent = role === 'pendente'
+              ? 'Sua conta ainda está aguardando aprovação do administrador.'
+              : 'Seu acesso foi recusado pelo administrador.';
+            return;
+          }
           STATE.user = { email: user.email, uid: user.uid, role };
           // Carrega dados do Firestore (se conseguir)
           await carregarDoFirestore();

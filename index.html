@@ -43,9 +43,44 @@
           <i class="fa-solid fa-right-to-bracket"></i> Entrar
         </button>
         <p class="login-hint">
-          Ainda não tem conta? <a href="#" id="btnCriarConta">Criar agora</a>
+          Ainda não tem conta? <a href="#" id="btnCriarConta">Solicitar acesso</a>
         </p>
         <p class="login-status" id="loginStatus"></p>
+      </form>
+    </div>
+
+    <!-- ===== FORMULÁRIO: SOLICITAR ACESSO (consultor) ===== -->
+    <div class="login-box" id="signupBox" style="display:none">
+      <div class="login-logo">
+        <img src="logo.webp" alt="Smart Seller" class="login-logo-img">
+        <h1>Solicitar acesso</h1>
+        <p>Preencha os dados abaixo. Sua conta ficará <b>pendente</b> até o administrador aprovar.</p>
+      </div>
+
+      <form id="signupForm" class="login-form">
+        <label class="field">
+          <i class="fa-regular fa-user"></i>
+          <input type="text" id="suNome" placeholder="Seu nome" required autocomplete="name">
+        </label>
+        <label class="field">
+          <i class="fa-regular fa-envelope"></i>
+          <input type="email" id="suEmail" placeholder="seu@email.com" required autocomplete="email">
+        </label>
+        <label class="field">
+          <i class="fa-solid fa-briefcase"></i>
+          <input type="text" id="suSetor" placeholder="Setor / Cargo (opcional)" autocomplete="organization-title">
+        </label>
+        <label class="field">
+          <i class="fa-solid fa-lock"></i>
+          <input type="password" id="suSenha" placeholder="Crie uma senha (mín. 6 caracteres)" minlength="6" required autocomplete="new-password">
+        </label>
+        <button type="submit" class="btn-primary btn-block">
+          <i class="fa-solid fa-paper-plane"></i> Enviar solicitação
+        </button>
+        <p class="login-hint">
+          Já tem conta? <a href="#" id="btnVoltarLogin">Voltar ao login</a>
+        </p>
+        <p class="login-status" id="signupStatus"></p>
       </form>
     </div>
   </div>
@@ -75,7 +110,7 @@
           <a class="nav-item active" data-tab="consulta"><i class="fa-solid fa-magnifying-glass-chart"></i><span>Consulta</span></a>
           <a class="nav-item" data-tab="historico"><i class="fa-solid fa-clock-rotate-left"></i><span>Histórico</span></a>
           <a class="nav-item only-admin" data-tab="produtos"><i class="fa-solid fa-boxes-stacked"></i><span>Produtos</span></a>
-          <a class="nav-item only-admin" data-tab="config"><i class="fa-solid fa-sliders"></i><span>Configurações</span></a>
+          <a class="nav-item only-admin" data-tab="config"><i class="fa-solid fa-sliders"></i><span>Configurações</span><span id="pendingBadge" class="pending-badge" style="display:none">0</span></a>
         </nav>
         <div class="side-footer">
           <div class="user-chip">
@@ -241,14 +276,20 @@
           </div>
 
           <div class="card only-admin">
-            <h3><i class="fa-solid fa-users-gear"></i> Gerenciar usuários (apenas Admin)</h3>
-            <p class="muted">Crie novos consultores. Eles poderão fazer consultas, mas não editar produtos.</p>
+            <h3><i class="fa-solid fa-user-clock"></i> Solicitações de acesso pendentes</h3>
+            <p class="muted">Consultores agora se cadastram sozinhos na tela de login. As solicitações aparecem aqui para você aprovar ou recusar.</p>
+            <div id="solicitacoesList" class="users-list"><p class="muted">Nenhuma solicitação pendente.</p></div>
+          </div>
+
+          <div class="card only-admin">
+            <h3><i class="fa-solid fa-users-gear"></i> Consultores (apenas Admin)</h3>
+            <p class="muted">Consultores aprovados. Se quiser, você também pode criar um acesso direto (já aprovado) abaixo.</p>
             <form id="novoUserForm" class="grid-2">
               <label class="field"><span>Email do novo consultor</span><input type="email" id="novoUserEmail" placeholder="consultor@empresa.com" required></label>
               <label class="field"><span>Senha inicial</span><input type="text" id="novoUserPass" placeholder="Mínimo 6 caracteres" minlength="6" required></label>
             </form>
             <div class="row-actions">
-              <button class="btn-primary" id="btnCriarUser"><i class="fa-solid fa-user-plus"></i> Criar consultor</button>
+              <button class="btn-primary" id="btnCriarUser"><i class="fa-solid fa-user-plus"></i> Criar consultor (já aprovado)</button>
               <span class="muted" id="criarUserStatus"></span>
             </div>
             <div id="usersList" class="users-list"></div>
