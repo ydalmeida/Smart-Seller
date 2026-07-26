@@ -1,13 +1,12 @@
 # Smart Seller — Recomendador de produtos por CNPJ
 
-> Inspirado no design do CDA (ARCOM), com estrutura nova, enxuta e focada no que importa:
 > **coloca o CNPJ, mostra o Top 5 produtos mais vendidos para aquele ramo + região.**
 
 ## 🚀 Como rodar (30 segundos)
 
 1. Abra o arquivo `index.html` no navegador (Chrome, Edge, Firefox).
 2. Login:
-   - **Admin (acesso total)**: `diogokarita547@gmail.com` / `Arcom2026`
+   - **Admin (acesso total)**
    - **Consultor**: precisa ser criado pelo Admin (aba Configurações)
 3. Pronto. O sistema já vem com **30 produtos-exemplo** cadastrados.
 
@@ -36,7 +35,7 @@ Quando um **Consultor** entra:
 Na primeira vez que abrir o sistema, a conta `diogokarita547@gmail.com` será **criada automaticamente** no Firebase. Basta:
 
 1. Abrir `index.html`
-2. Digitar email: `diogokarita547@gmail.com`  | senha: `Arcom2026`
+2. Digitar email: `******`  | senha: `***`
 3. Clicar **Entrar**
 4. Pronto — você está logado como Admin
 
