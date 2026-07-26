@@ -1,6 +1,6 @@
 /* ============================================================
-   CDA TOP 5 — Seed de produtos
-   30 produtos de exemplo cobrindo ramos variados.
+   Seed de produtos
+   Produtos de exemplo cobrindo ramos variados.
    Você pode editar, apagar ou cadastrar mais na aba "Produtos".
    ============================================================ */
 

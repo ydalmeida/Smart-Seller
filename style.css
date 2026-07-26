@@ -1,12 +1,12 @@
 /* ============================================================
-   CDA TOP 5 — Visual System
-   Inspirado no CDA (ARCOM). Mesmo design system, estrutura nova.
+   Smart Seller — Visual System
+   Tema claro/escuro com animações e partículas de fundo
    ============================================================ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* ARCOM Design System */
+  /* Tokens de cor */
   --bg:         #F6F6F6;
   --surface:    #FFFFFF;
   --surface2:   #F0F1EF;
@@ -81,6 +81,116 @@ body {
 #particleCanvas {
   position: fixed; inset: 0; width: 100%; height: 100%;
   z-index: 0; pointer-events: none; display: block;
+}
+
+/* ============================================================
+   SPLASH (BOAS-VINDAS)
+   ============================================================ */
+.splash-overlay {
+  position: fixed; inset: 0; z-index: 250;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  overflow: hidden;
+}
+.splash-content {
+  position: relative; z-index: 2;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  max-width: 520px;
+}
+/* Logo com glow radial atrás */
+.splash-logo-wrap {
+  position: relative;
+  width: 180px; height: 180px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 14px;
+}
+.splash-glow {
+  position: absolute; inset: -30px;
+  background: radial-gradient(circle at center, var(--accent) 0%, transparent 70%);
+  opacity: .35;
+  filter: blur(20px);
+  animation: splashGlow 4s ease-in-out infinite;
+  z-index: 0;
+}
+.splash-logo {
+  position: relative; z-index: 1;
+  width: 140px; height: 140px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid var(--surface);
+  box-shadow: 0 20px 50px rgba(0,120,64,.25);
+  animation: splashLogoIn .9s cubic-bezier(.2,.85,.25,1) both;
+}
+/* Título e subtítulo com cascata */
+.splash-title {
+  font-size: 48px; font-weight: 300; letter-spacing: -1px;
+  margin: 0; color: var(--text);
+  animation: slideUpFade .7s cubic-bezier(.2,.85,.25,1) both;
+  animation-delay: .15s;
+  line-height: 1.1;
+}
+.splash-title strong { font-weight: 900; color: var(--accent); }
+.splash-sub {
+  color: var(--muted); font-size: 16px; margin: 0;
+  animation: slideUpFade .7s cubic-bezier(.2,.85,.25,1) both;
+  animation-delay: .25s;
+}
+.splash-btn {
+  margin-top: 16px;
+  font-size: 16px;
+  padding: 14px 36px;
+  animation: slideUpFade .7s cubic-bezier(.2,.85,.25,1) both;
+  animation-delay: .35s;
+}
+.splash-btn .splash-arrow {
+  display: inline-block; margin-left: 8px;
+  transition: transform .25s ease;
+}
+.splash-btn:hover .splash-arrow {
+  transform: translateX(4px);
+}
+.splash-foot {
+  color: var(--muted); font-size: 11px; margin-top: 24px;
+  letter-spacing: 1px; text-transform: uppercase;
+  animation: splashFadeIn 1s ease both;
+  animation-delay: .6s;
+  opacity: 0;
+}
+@keyframes splashLogoIn {
+  0%   { opacity: 0; transform: scale(.5) rotate(-15deg); }
+  60%  { opacity: 1; transform: scale(1.08) rotate(2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+@keyframes splashGlow {
+  0%, 100% { opacity: .35; transform: scale(1); }
+  50%      { opacity: .55; transform: scale(1.1); }
+}
+@keyframes splashFadeIn { to { opacity: 1; } }
+/* Splash saindo (transição para login) */
+body.splash-leaving .splash-overlay {
+  animation: splashOut .55s cubic-bezier(.55,0,.7,.3) forwards;
+}
+@keyframes splashOut {
+  to { opacity: 0; transform: scale(1.05); filter: blur(8px); }
+}
+body.splash-leaving .splash-content > * {
+  animation: splashContentOut .35s ease forwards;
+}
+@keyframes splashContentOut {
+  to { opacity: 0; transform: translateY(-20px); }
+}
+
+/* Splash responsivo */
+@media (max-width: 600px) {
+  .splash-title    { font-size: 36px; }
+  .splash-logo-wrap { width: 140px; height: 140px; }
+  .splash-logo     { width: 110px; height: 110px; }
+  .splash-sub      { font-size: 14px; }
+  .splash-btn      { padding: 12px 28px; font-size: 15px; }
+  .splash-foot     { font-size: 10px; margin-top: 16px; }
 }
 
 /* ============================================================
@@ -402,6 +512,48 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 .top5-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .top5-score { font-size: 24px; font-weight: 800; color: var(--accent); }
 .top5-score small { font-size: 11px; color: var(--muted); display: block; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+/* Selo de confiança ao lado do score (aparece quando a IA está habilitada
+   ou quando o score final é combinado 60% IA + 40% algoritmo). */
+.confianca-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.confianca-badge.conf-alta  { background: rgba(0,150,80,.14);  color: #1B8A4A; border-color: rgba(0,150,80,.35); }
+.confianca-badge.conf-media { background: rgba(201,162,39,.16); color: #B08018; border-color: rgba(201,162,39,.40); }
+.confianca-badge.conf-baixa { background: rgba(150,60,60,.12);  color: #B04545; border-color: rgba(150,60,60,.32); }
+[data-theme="dark"] .confianca-badge.conf-alta  { background: rgba(74,222,128,.16); color: #4ADE80; border-color: rgba(74,222,128,.40); }
+[data-theme="dark"] .confianca-badge.conf-media { background: rgba(234,179,8,.18);  color: #FACC15; border-color: rgba(234,179,8,.40); }
+[data-theme="dark"] .confianca-badge.conf-baixa { background: rgba(248,113,113,.14);color: #FCA5A5; border-color: rgba(248,113,113,.35); }
+
+/* Aviso de "match por similaridade" — quando nenhum produto tem match
+   direto com o CNAE do cliente. */
+.aviso-similaridade {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border-radius: var(--radius, 10px);
+  background: rgba(234,179,8,.10);
+  border: 1px solid rgba(234,179,8,.35);
+  color: #B08018;
+  font-size: 13px;
+}
+[data-theme="dark"] .aviso-similaridade {
+  background: rgba(234,179,8,.12);
+  border-color: rgba(234,179,8,.35);
+  color: #FACC15;
+}
+.aviso-similaridade i { font-size: 16px; flex-shrink: 0; }
+
 @media (max-width: 600px) { .top5-card { grid-template-columns: 48px 1fr; } .top5-actions { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; width: 100%; padding-top: 8px; border-top: 1px dashed var(--border); } }
 
 /* ============================================================
@@ -457,3 +609,259 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 .toast.error i { color: var(--red); }
 .toast.info i { color: var(--cyan); }
 @keyframes toastIn { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ============================================================
+   ANIMAÇÕES INTERATIVAS (sutil + profissional)
+   - Entrada da tela de login (ao abrir o site)
+   - Momento do login (ao logar com sucesso)
+   - Micro-animações em botões, cards, inputs, tabelas, navegação
+   ============================================================ */
+
+/* --- KEYFRAMES --- */
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes logoPulse {
+  0%   { opacity: 0; transform: scale(.85); }
+  60%  { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes logoPulseStrong {
+  0%   { transform: scale(1); filter: brightness(1); }
+  40%  { transform: scale(1.18) rotate(-3deg); filter: brightness(1.2); }
+  100% { transform: scale(.4); filter: brightness(1.4); opacity: 0; }
+}
+@keyframes fadeOutScale {
+  to { opacity: 0; transform: scale(.94) translateY(-12px); }
+}
+@keyframes appFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes rowAppear {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-3px); }
+  40%, 60% { transform: translateX(3px); }
+}
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 120, 64, .45); }
+  50%      { box-shadow: 0 0 0 10px rgba(0, 120, 64, 0); }
+}
+
+/* --- TELA DE LOGIN: entrada animada --- */
+.login-box {
+  animation: slideUpFade .65s cubic-bezier(.2,.85,.25,1) both;
+}
+.login-logo-img {
+  animation: logoPulse 1.2s cubic-bezier(.2,.85,.25,1) both;
+  animation-delay: .1s;
+  transition: transform .3s ease;
+}
+.login-logo-img:hover {
+  transform: scale(1.04) rotate(-2deg);
+}
+/* Cascata nos campos do form (stagger) */
+.login-form .field,
+.login-form button[type="submit"],
+.login-form .login-hint,
+.login-form .login-status {
+  animation: slideUpFade .5s cubic-bezier(.2,.85,.25,1) both;
+}
+.login-form .field:nth-of-type(1) { animation-delay: .20s; }
+.login-form .field:nth-of-type(2) { animation-delay: .28s; }
+.login-form button[type="submit"]  { animation-delay: .36s; }
+.login-form .login-hint            { animation-delay: .42s; }
+.login-form .login-status          { animation-delay: .48s; }
+
+/* Erro de login: shake */
+.login-status.shake {
+  animation: shake .45s cubic-bezier(.36,.07,.19,.97) both;
+  color: var(--red);
+}
+
+/* --- MOMENTO DO LOGIN (ao logar com sucesso) --- */
+/* Aplicado via JS: body.login-success */
+body.login-success .login-box {
+  animation: fadeOutScale .45s cubic-bezier(.55,0,.7,.3) forwards;
+}
+body.login-success .login-logo-img {
+  animation: logoPulseStrong .55s cubic-bezier(.55,0,.7,.3) forwards;
+  animation-delay: .05s;
+}
+body.login-success .login-form {
+  animation: fadeOutScale .35s ease forwards;
+  animation-delay: .1s;
+}
+
+/* App principal: fade-in quando entra após login */
+#appRoot.show {
+  animation: appFadeIn .5s cubic-bezier(.2,.85,.25,1) both;
+}
+
+/* --- MICRO-ANIMAÇÕES INTERATIVAS --- */
+
+/* Cards: leve elevação no hover */
+.card,
+.smart-table,
+.topbar {
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .12), 0 0 0 1px rgba(0,120,64,.08);
+}
+[data-theme="dark"] .card:hover {
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .45), 0 0 0 1px rgba(186,230,79,.12);
+}
+
+/* Botões: hover com glow + active com afundar */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s ease, box-shadow .25s ease, background-color .2s ease;
+}
+.btn-primary:hover {
+  box-shadow: 0 8px 24px rgba(0, 120, 64, .35);
+}
+.btn-primary:active {
+  transform: translateY(0) scale(.97);
+  transition-duration: .08s;
+}
+/* Glow pulsante sutil quando o botão é o primário da ação (classe opcional) */
+.btn-primary.pulse {
+  animation: pulseGlow 2.4s ease-in-out infinite;
+}
+.btn-ghost,
+.btn-danger {
+  transition: transform .2s ease, background-color .2s ease, color .2s ease, border-color .2s ease;
+}
+.btn-ghost:active,
+.btn-danger:active {
+  transform: scale(.97);
+  transition-duration: .08s;
+}
+
+/* Inputs: foco expandido */
+.field input,
+.field select,
+.field textarea {
+  transition: border-color .2s ease, box-shadow .25s ease, transform .2s ease;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  transform: scale(1.01);
+}
+
+/* Sidebar/nav-item: indicador "active" deslizante */
+.nav-item {
+  position: relative;
+  transition: color .2s ease, background-color .2s ease;
+}
+.nav-item::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px; height: 60%;
+  background: var(--accent);
+  border-radius: 0 3px 3px 0;
+  transition: transform .3s cubic-bezier(.2,.85,.25,1);
+}
+.nav-item.active::before {
+  transform: translateY(-50%) scaleY(1);
+}
+.nav-item:hover {
+  transform: translateX(2px);
+}
+
+/* Sidebar: aparece com slide ao entrar */
+.sidebar {
+  animation: slideInLeft .5s cubic-bezier(.2,.85,.25,1) both;
+}
+
+/* Topbar buttons: ripple-like ao clicar */
+.topbar-btn {
+  position: relative;
+  overflow: hidden;
+  transition: transform .15s ease, border-color .2s ease, color .2s ease, background-color .2s ease;
+}
+.topbar-btn:active {
+  transform: scale(.92);
+}
+
+/* User-chip: leve pop ao hover */
+.user-chip {
+  transition: background-color .2s ease, transform .2s ease;
+}
+.user-chip:hover {
+  transform: translateY(-1px);
+}
+
+/* Linhas da tabela: cascata de entrada */
+.smart-table tbody tr {
+  animation: rowAppear .35s ease both;
+}
+.smart-table tbody tr:nth-child(1) { animation-delay: .02s; }
+.smart-table tbody tr:nth-child(2) { animation-delay: .05s; }
+.smart-table tbody tr:nth-child(3) { animation-delay: .08s; }
+.smart-table tbody tr:nth-child(4) { animation-delay: .11s; }
+.smart-table tbody tr:nth-child(5) { animation-delay: .14s; }
+.smart-table tbody tr:nth-child(6) { animation-delay: .17s; }
+.smart-table tbody tr:nth-child(7) { animation-delay: .20s; }
+.smart-table tbody tr:nth-child(8) { animation-delay: .23s; }
+.smart-table tbody tr:nth-child(9) { animation-delay: .26s; }
+.smart-table tbody tr:nth-child(n+10) { animation-delay: .28s; }
+
+/* Role badges: pulse quando aparecem */
+.role-badge {
+  animation: rowAppear .35s ease both;
+}
+
+/* Modal: abertura mais elegante */
+.modal-box {
+  animation: slideUpFade .35s cubic-bezier(.2,.85,.25,1) both;
+}
+
+/* Toast (já tem toastIn, mas reforça) */
+.toast {
+  transition: transform .2s ease, opacity .2s ease;
+}
+.toast:hover {
+  transform: translateX(-4px);
+}
+
+/* Logo na topbar: hover suave */
+.topbar-logo {
+  transition: transform .3s ease;
+}
+.topbar-brand:hover .topbar-logo {
+  transform: rotate(-6deg) scale(1.08);
+}
+
+/* Spinner (já existe, garantir suavidade) */
+.spinner {
+  transition: opacity .2s ease;
+}
+
+/* --- ACESSIBILIDADE: usuários com prefers-reduced-motion --- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

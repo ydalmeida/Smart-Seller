@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -----------------------------------------------------------------
+    // Coleção de usuários (consultores + admin)
+    // - Qualquer usuário logado pode LER a lista de usuários (necessário
+    //   pro admin ver as solicitações pendentes e pro app consultar
+    //   o próprio role).
+    // - Cada usuário pode ESCREVER no próprio doc (ex: atualizar perfil).
+    // - Apenas ADMIN pode escrever nos docs dos OUTROS (aprovar/recusar
+    //   solicitações, promover/rebaixar consultores).
+    // -----------------------------------------------------------------
+    match /usuarios/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (
+        request.auth.uid == uid ||
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    // -----------------------------------------------------------------
+    // Documentos de dados do app (produtos, histórico etc.)
+    // - Qualquer usuário logado pode LER (consultores também precisam
+    //   ler o catálogo de produtos e o próprio histórico).
+    // - Apenas ADMIN pode ESCREVER (cadastrar/editar produtos, etc.).
+    // -----------------------------------------------------------------
+    match /dados/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // -----------------------------------------------------------------
+    // Subcoleção de histórico por usuário (cada item tem uid do dono).
+    // - Dono pode ler/escrever os próprios itens.
+    // - Admin pode ler tudo (para auditoria).
+    // -----------------------------------------------------------------
+    match /dados/{parentDoc}/itens/{itemId} {
+      allow read: if request.auth != null && (
+        resource.data.uid == request.auth.uid ||
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role == 'admin'
+      );
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // -----------------------------------------------------------------
+    // Bloqueia qualquer outra coleção não prevista acima (segurança).
+    // -----------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
