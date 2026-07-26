@@ -33,9 +33,17 @@ const STATE = {
 const STORAGE_KEYS = {
   config: 'cda_top5_config_v1',
   produtos: 'cda_top5_produtos_v1',
-  historico: 'cda_top5_historico_v1',
+  // Histórico é por usuário (chave dinâmica via historicoKey())
+  historicoLegacy: 'cda_top5_historico_v1',
   users: 'cda_top5_users_v1'
 };
+
+// Cada usuário tem sua própria chave de histórico no localStorage.
+// Isso garante que o histórico de consultas seja individual e privado.
+function historicoKey() {
+  const uid = (STATE.user && STATE.user.uid) ? STATE.user.uid : 'anon';
+  return `cda_top5_historico_${uid}`;
+}
 
 // 'firebase' = login real + sync | 'local' = login funciona só neste navegador
 let APP_MODE = 'local';
@@ -61,7 +69,8 @@ function toast(msg, tipo = 'success') {
 function salvarLocal() {
   localStorage.setItem(STORAGE_KEYS.config, JSON.stringify(STATE.config));
   localStorage.setItem(STORAGE_KEYS.produtos, JSON.stringify(STATE.produtos));
-  localStorage.setItem(STORAGE_KEYS.historico, JSON.stringify(STATE.historico));
+  // Histórico é salvo por usuário para que cada um veja apenas as suas consultas
+  localStorage.setItem(historicoKey(), JSON.stringify(STATE.historico));
   // Se estiver logado e online, sincroniza com Firestore em background
   if (firebaseDb && STATE.user) {
     salvarNoFirestore();
@@ -74,7 +83,19 @@ function carregarLocal() {
     if (cfg) Object.assign(STATE.config, JSON.parse(cfg));
     const prods = localStorage.getItem(STORAGE_KEYS.produtos);
     if (prods) STATE.produtos = JSON.parse(prods);
-    const hist = localStorage.getItem(STORAGE_KEYS.historico);
+    // Migração única do histórico legado (chave global) para a chave do admin local,
+    // caso o usuário já tenha consultas salvas pela versão antiga do app.
+    const legacyHist = localStorage.getItem(STORAGE_KEYS.historicoLegacy);
+    const myKey = historicoKey();
+    if (legacyHist && !localStorage.getItem(myKey)) {
+      try {
+        const parsed = JSON.parse(legacyHist);
+        if (Array.isArray(parsed) && parsed.length) {
+          localStorage.setItem(myKey, JSON.stringify(parsed));
+        }
+      } catch {}
+    }
+    const hist = localStorage.getItem(myKey);
     if (hist) STATE.historico = JSON.parse(hist);
   } catch (e) { console.warn('Erro ao carregar local:', e); }
 }
@@ -211,6 +232,12 @@ function mostrarApp() {
   $('#loginOverlay').style.display = 'none';
   $('#appRoot').style.display = 'block';
   $('#userEmail').textContent = STATE.user?.email || 'modo local';
+  // Garante que o histórico exibido é o do usuário que acabou de logar
+  // (carregarLocal() no boot rodou com STATE.user == null e pode ter lido a chave 'anon')
+  try {
+    const h = localStorage.getItem(historicoKey());
+    STATE.historico = h ? JSON.parse(h) : [];
+  } catch { STATE.historico = []; }
   // Aplica permissões (mostra/oculta botões conforme role)
   aplicarPermissoes();
   renderProdutos(); renderHistorico(); renderConfig();
@@ -446,9 +473,11 @@ async function consultar() {
     $('#empresaBox').style.display = 'block';
     $('#top5Box').style.display = 'block';
 
-    // 5) Histórico
+    // 5) Histórico (individual por usuário)
     STATE.historico.unshift({
       id: getId(), data: new Date().toISOString(),
+      uid: STATE.user?.uid || 'anon',
+      userEmail: STATE.user?.email || '—',
       cnpj: empresa.cnpj, empresa: empresa.razao, cnae: empresa.cnae, uf: empresa.uf,
       top1: top5.itens[0]?.nome || '—'
     });
@@ -558,16 +587,14 @@ function renderEmpresa(empresa, afinidade) {
 function renderTop5(itens, empresa) {
   const list = $('#top5List');
   list.innerHTML = '';
-  const showPrice = isAdmin();
   itens.forEach((it, i) => {
     const p = it.produto;
     const card = document.createElement('div');
     card.className = 'top5-card';
-    // Consultor vê só: nome, marca, categoria. Admin vê também preço e margem.
+    // Card mostra apenas: marca, categoria e nome do produto
     const meta = `
       <span><b>${p.marca || '—'}</b></span>
       <span>${p.categoria || '—'}</span>
-      ${showPrice ? `<span>${fmtBRL(p.preco || 0)}</span><span>Margem ${p.margem || 0}%</span>` : ''}
     `;
     card.innerHTML = `
       <div class="top5-rank">${i + 1}</div>
@@ -696,14 +723,13 @@ function renderProdutos() {
   const busca = ($('#prodBusca').value || '').toLowerCase();
   const catFiltro = sel.value;
   const filtrados = STATE.produtos.filter(p =>
-    (!busca || p.nome.toLowerCase().includes(busca) || (p.marca || '').toLowerCase().includes(busca) || p.codigo.toLowerCase().includes(busca)) &&
+    (!busca || p.nome.toLowerCase().includes(busca) || (p.marca || '').toLowerCase().includes(busca)) &&
     (!catFiltro || p.categoria === catFiltro)
   );
 
-  // Mostrar/ocultar colunas que só admin pode ver (Preço, Status, Ações)
-  const showPrice = isAdmin();
-  $$('#prodTable th.only-admin').forEach(th => th.style.display = showPrice ? '' : 'none');
-  $$('#prodTable td.preco-col').forEach(td => td.style.display = showPrice ? '' : 'none');
+  // A coluna de ações só aparece para o admin (editar/excluir)
+  const showActions = isAdmin();
+  $$('#prodTable th.only-admin').forEach(th => th.style.display = showActions ? '' : 'none');
 
   const tb = $('#prodTable tbody');
   tb.innerHTML = '';
@@ -714,17 +740,12 @@ function renderProdutos() {
   $('#prodEmpty').style.display = 'none';
   filtrados.forEach(p => {
     const tr = document.createElement('tr');
-    // Consultor vê apenas: código, nome, marca, categoria, CNAEs, UFs
-    // Admin vê também: preço, status, ações
     tr.innerHTML = `
-      <td><code>${p.codigo}</code></td>
       <td><b>${p.nome}</b></td>
       <td>${p.marca || '—'}</td>
       <td>${p.categoria || '—'}</td>
       <td>${(p.cnaes || '').split(',').slice(0, 2).join(', ')}${p.cnaes && p.cnaes.split(',').length > 2 ? '…' : ''}</td>
       <td>${p.ufs || 'Todas'}</td>
-      <td class="only-admin preco-col">${fmtBRL(p.preco || 0)}</td>
-      <td class="only-admin"><span class="badge badge-green">OK</span></td>
       <td class="only-admin">
         <div class="row-actions-cell">
           <button data-edit="${p.id}" title="Editar"><i class="fa-solid fa-pen"></i></button>
@@ -759,12 +780,9 @@ function abrirModalProduto(prod = null) {
   }
   $('#produtoModalTitle').textContent = prod ? 'Editar produto' : 'Novo produto';
   $('#prodId').value = prod?.id || '';
-  $('#prodCodigo').value = prod?.codigo || '';
   $('#prodNome').value = prod?.nome || '';
   $('#prodMarca').value = prod?.marca || '';
   $('#prodCategoria').value = prod?.categoria || '';
-  $('#prodPreco').value = prod?.preco || '';
-  $('#prodMargem').value = prod?.margem || '';
   $('#prodDescricao').value = prod?.descricao || '';
   $('#prodCnaes').value = prod?.cnaes || '';
   $('#prodUfs').value = prod?.ufs || '';
@@ -780,12 +798,9 @@ $('#produtoForm').addEventListener('submit', (e) => {
   if (!isAdmin()) { toast('Acesso negado.', 'error'); return; }
   const p = {
     id: $('#prodId').value || getId(),
-    codigo: $('#prodCodigo').value.trim(),
     nome: $('#prodNome').value.trim(),
     marca: $('#prodMarca').value.trim(),
     categoria: $('#prodCategoria').value.trim(),
-    preco: parseFloat($('#prodPreco').value) || 0,
-    margem: parseFloat($('#prodMargem').value) || 0,
     descricao: $('#prodDescricao').value.trim(),
     cnaes: $('#prodCnaes').value.trim(),
     ufs: $('#prodUfs').value.trim().toUpperCase(),
@@ -939,7 +954,14 @@ $('#btnSalvarPesos').addEventListener('click', () => {
 $('#btnLimparTudo').addEventListener('click', async () => {
   if (!isAdmin()) { toast('Apenas administradores podem limpar tudo.', 'error'); return; }
   if (!confirm('Apagar TODOS os produtos, histórico e configurações deste navegador e do Firestore?')) return;
-  localStorage.clear();
+  // Apaga todas as chaves de histórico por usuário (e a legada)
+  Object.keys(localStorage).forEach(k => {
+    if (k.startsWith('cda_top5_historico_') || k === STORAGE_KEYS.historicoLegacy) {
+      localStorage.removeItem(k);
+    }
+  });
+  localStorage.removeItem(STORAGE_KEYS.produtos);
+  localStorage.removeItem(STORAGE_KEYS.users);
   STATE.produtos = window.PRODUTOS_SEED.map(p => ({ ...p, id: getId() }));
   STATE.historico = [];
   STATE.config.pesos = { cnae: 50, regiao: 30, prioridade: 10, keywords: 10 };
@@ -1166,10 +1188,17 @@ async function carregarDoFirestore() {
     if (prodsDoc.exists && prodsDoc.data().lista?.length) {
       STATE.produtos = prodsDoc.data().lista;
     }
-    const histDoc = await firebaseDb.collection('dados').doc('historico').get();
-    if (histDoc.exists) {
-      STATE.historico = histDoc.data().lista || [];
-    }
+    // Histórico é por usuário: lê apenas os itens do UID logado
+    const histSnap = await firebaseDb.collection('dados')
+      .doc('historico')
+      .collection('itens')
+      .where('uid', '==', STATE.user.uid)
+      .orderBy('data', 'desc')
+      .limit(50)
+      .get();
+    const lista = [];
+    histSnap.forEach(d => lista.push(d.data()));
+    STATE.historico = lista;
     salvarLocal();
   } catch (e) {
     console.warn('Falha ao carregar do Firestore:', e);
@@ -1184,10 +1213,15 @@ async function salvarNoFirestore() {
       atualizadoPor: STATE.user.email,
       atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
-    await firebaseDb.collection('dados').doc('historico').set({
-      lista: STATE.historico,
-      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    // Salva o histórico por usuário na subcoleção `dados/historico/itens`.
+    // Cada item é identificado pelo próprio `id` e filtrado por `uid` na leitura.
+    const col = firebaseDb.collection('dados').doc('historico').collection('itens');
+    const batch = firebaseDb.batch();
+    STATE.historico.forEach(item => {
+      const ref = col.doc(item.id);
+      batch.set(ref, { ...item, uid: STATE.user.uid, userEmail: STATE.user.email }, { merge: true });
     });
+    await batch.commit();
   } catch (e) {
     console.warn('Falha ao salvar no Firestore:', e);
   }
