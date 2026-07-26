@@ -38,12 +38,17 @@
         <label class="field">
           <i class="fa-solid fa-lock"></i>
           <input type="password" id="loginPass" placeholder="Senha" required autocomplete="current-password">
+          <button type="button" class="login-pwd-toggle" onclick="togglePwd('loginPass', this)" tabindex="-1" aria-label="Mostrar ou ocultar senha">
+            <i class="fa-regular fa-eye"></i>
+          </button>
         </label>
         <button type="submit" class="btn-primary btn-block">
           <i class="fa-solid fa-right-to-bracket"></i> Entrar
         </button>
         <p class="login-hint">
-          Ainda não tem conta? <a href="#" id="btnCriarConta">Solicitar acesso</a>
+          <a href="#" id="btnCriarConta" class="login-link-secondary">
+            <i class="fa-solid fa-user-plus"></i> Não tenho acesso — solicitar permissão
+          </a>
         </p>
         <p class="login-status" id="loginStatus"></p>
       </form>
@@ -73,6 +78,9 @@
         <label class="field">
           <i class="fa-solid fa-lock"></i>
           <input type="password" id="suSenha" placeholder="Crie uma senha (mín. 6 caracteres)" minlength="6" required autocomplete="new-password">
+          <button type="button" class="login-pwd-toggle" onclick="togglePwd('suSenha', this)" tabindex="-1" aria-label="Mostrar ou ocultar senha">
+            <i class="fa-regular fa-eye"></i>
+          </button>
         </label>
         <button type="submit" class="btn-primary btn-block">
           <i class="fa-solid fa-paper-plane"></i> Enviar solicitação

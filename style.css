@@ -252,6 +252,42 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 .login-form .field i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .login-form .field input { padding-left: 40px; }
 
+/* Botão de olho (mostrar/ocultar senha) à direita do campo */
+.login-pwd-toggle {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+  padding: 0;
+}
+.login-pwd-toggle:hover { color: var(--accent); background: rgba(0,120,64,.08); }
+.login-pwd-toggle:focus { outline: none; border-color: var(--accent); }
+
+/* Link secundário (ex: "Não tenho acesso — solicitar permissão") */
+.login-link-secondary {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  background: rgba(0,120,64,.08);
+  border: 1px solid rgba(0,120,64,.20);
+  color: var(--accent) !important;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all .15s;
+}
+.login-link-secondary:hover {
+  background: rgba(0,120,64,.14);
+  border-color: var(--accent);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+.login-link-secondary i { font-size: 12px; }
+
 /* Grid */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }

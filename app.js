@@ -122,6 +122,21 @@ function verificarSenhaLocal(s, hash) {
   return ofuscarSenha(s) === hash;
 }
 
+// Alterna visualização de senha (olho) nos campos de login/cadastro.
+// Usado pelos botões .login-pwd-toggle no HTML.
+function togglePwd(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const icon = btn.querySelector('i');
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (icon) { icon.classList.remove('fa-eye'); icon.classList.add('fa-eye-slash'); }
+  } else {
+    input.type = 'password';
+    if (icon) { icon.classList.remove('fa-eye-slash'); icon.classList.add('fa-eye'); }
+  }
+}
+
 function mascaraCNPJ(v) {
   v = v.replace(/\D/g, '').slice(0, 14);
   v = v.replace(/^(\d{2})(\d)/, '$1.$2');
@@ -1098,7 +1113,11 @@ $('#btnCriarUser').addEventListener('click', async (e) => {
       $('#novoUserEmail').value = '';
       $('#novoUserPass').value = '';
       $('#criarUserStatus').textContent = '✓ Criado';
-      setTimeout(() => { STATE.user = null; mostrarLogin(); }, 2500);
+      // Faz logout imediatamente e volta para a tela de login.
+      // O toast de sucesso fica visível na próxima tela.
+      await firebaseAuth.signOut();
+      STATE.user = null;
+      mostrarLogin();
     } catch (err) {
       $('#criarUserStatus').textContent = '✗ ' + err.message;
       toast('Erro: ' + err.message, 'error');
@@ -1146,7 +1165,7 @@ async function renderSolicitacoes() {
   // MODO FIREBASE
   if (APP_MODE === 'firebase' && firebaseDb) {
     try {
-      const snap = await firebaseDb.collection('usuarios').where('role', '==', 'pendente').get();
+      const snap = await firebaseDb.collection('usuarios').where('role', '==', 'pendente').orderBy('criadoEm', 'desc').get();
       if (snap.empty) {
         box.innerHTML = '<p class="muted">Nenhuma solicitação pendente.</p>';
         atualizarBadgePendentes(0);
@@ -1188,7 +1207,14 @@ async function renderSolicitacoes() {
 
   // MODO LOCAL
   const users = getLocalUsers();
-  const pendentes = users.filter(u => u.role === 'pendente');
+  const pendentes = users
+    .filter(u => u.role === 'pendente')
+    .sort((a, b) => {
+      // Mais recente primeiro (pendentes sem criadoEm vão para o fim)
+      const ta = a.criadoEm ? new Date(a.criadoEm).getTime() : 0;
+      const tb = b.criadoEm ? new Date(b.criadoEm).getTime() : 0;
+      return tb - ta;
+    });
   if (!pendentes.length) {
     box.innerHTML = '<p class="muted">Nenhuma solicitação pendente.</p>';
     atualizarBadgePendentes(0);
@@ -1340,6 +1366,15 @@ $('#btnExportar').addEventListener('click', async () => {
 (async function boot() {
   initTema();
   carregarLocal();
+
+  // Garante que a config do Firebase existe como objeto (proteção contra
+  // estado corrompido no localStorage de versões antigas do app).
+  if (!STATE.config.firebase || typeof STATE.config.firebase !== 'object') {
+    STATE.config.firebase = {
+      apiKey: "", authDomain: "", projectId: "",
+      storageBucket: "", messagingSenderId: "", appId: ""
+    };
+  }
 
   // Inicializa seed de produtos se for primeira vez (só local)
   if (!STATE.produtos || !STATE.produtos.length) {

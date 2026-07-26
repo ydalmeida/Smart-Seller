@@ -1,13 +1,14 @@
 # Smart Seller — Recomendador de produtos por CNPJ
 
+> Inspirado no design do CDA (ARCOM), com estrutura nova, enxuta e focada no que importa:
 > **coloca o CNPJ, mostra o Top 5 produtos mais vendidos para aquele ramo + região.**
 
 ## 🚀 Como rodar (30 segundos)
 
 1. Abra o arquivo `index.html` no navegador (Chrome, Edge, Firefox).
 2. Login:
-   - **Admin (acesso total)**
-   - **Consultor**: precisa ser criado pelo Admin (aba Configurações)
+   - **Admin (acesso total)**: `diogokarita547@gmail.com` / `Arcom2026`
+   - **Consultor**: clica em "Solicitar acesso" na tela de login, preenche nome/email/senha, e fica **pendente** até o Admin aprovar em Configurações → Solicitações de acesso pendentes
 3. Pronto. O sistema já vem com **30 produtos-exemplo** cadastrados.
 
 > ✅ O sistema **funciona 100% sem Firebase** (modo local). O login, permissões admin/consultor e o CRUD de produtos já estão operacionais. Quando você configurar seu próprio projeto Firebase, o login passa a ser em nuvem e os dados sincronizam entre dispositivos.
@@ -21,7 +22,7 @@
 | Exportar PDF do Top 5 | ✅ | ✅ |
 | Ver lista de produtos | ✅ | ✅ |
 | **Cadastrar/editar/excluir produtos** | ✅ | ❌ |
-| **Criar novos usuários consultores** | ✅ | ❌ |
+| **Aprovar/recusar solicitações de acesso** | ✅ | ❌ |
 | Configurar IA Groq, pesos do algoritmo, etc. | ✅ | ❌ |
 
 Quando um **Consultor** entra:
@@ -35,25 +36,25 @@ Quando um **Consultor** entra:
 Na primeira vez que abrir o sistema, a conta `diogokarita547@gmail.com` será **criada automaticamente** no Firebase. Basta:
 
 1. Abrir `index.html`
-2. Digitar email: `******`  | senha: `***`
+2. Digitar email: `diogokarita547@gmail.com`  | senha: `Arcom2026`
 3. Clicar **Entrar**
 4. Pronto — você está logado como Admin
 
 > ⚠️ **Importante**: Você precisa substituir as credenciais Firebase de exemplo (no `app.js`, constante `STATE.config.firebase`) pelas **credenciais reais do SEU projeto Firebase**. Do contrário, todos os usuários compartilharão o mesmo banco. Veja a seção "Firebase" abaixo.
 
-## 👥 Criar consultores
+## 👥 Consultores: autocadastro + aprovação do Admin
 
-Apenas o Admin pode criar consultores:
+Agora o próprio consultor cria a conta — o Admin só aprova ou recusa:
 
-1. Faça login como Admin
-2. Vá em **Configurações** (engrenagem no canto ou na sidebar)
-3. Role até **"Gerenciar usuários"**
-4. Preencha o email e a senha inicial (mínimo 6 caracteres)
-5. Clique **Criar consultor**
-6. Envie o email e a senha para o consultor por canal seguro
+1. O consultor abre `index.html`, clica em **"Solicitar acesso"** na tela de login
+2. Preenche nome, email, setor/cargo (opcional) e cria uma senha (mín. 6 caracteres)
+3. Clica **Enviar solicitação** — a conta nasce com status **pendente** e não consegue logar ainda
+4. O Admin faz login → **Configurações** → **"Solicitações de acesso pendentes"** (um badge vermelho avisa quando há pedidos)
+5. O Admin clica **Aprovar** (vira consultor, já pode logar) ou no **X** para **Recusar** (acesso bloqueado)
 
-⚠️ Ao criar um novo usuário, o Firebase desloga o Admin automaticamente (limitação do Firebase Auth).
-Faça login novamente com sua conta de Admin.
+> O Admin ainda pode criar um consultor diretamente (já aprovado), na mesma aba, em **"Consultores"**, se preferir pular a etapa de aprovação.
+
+⚠️ Ao criar um novo usuário (seja pelo autocadastro ou pelo Admin), o Firebase desloga a sessão atual automaticamente (limitação do Firebase Auth). Se isso acontecer com o Admin, é só logar de novo.
 
 ## 🤖 IA Groq (gratuita)
 
