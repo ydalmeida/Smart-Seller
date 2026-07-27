@@ -403,7 +403,7 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
 
 /* Buttons */
-.btn-primary, .btn-ghost, .btn-danger {
+.btn-primary, .btn-ghost, .btn-danger, .btn-secondary {
   padding: 10px 18px; border-radius: var(--radius-sm);
   font-family: inherit; font-size: 14px; font-weight: 600;
   cursor: pointer; border: 1px solid transparent;
@@ -415,6 +415,8 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 .btn-primary:disabled { opacity: .6; cursor: wait; }
 .btn-ghost { background: transparent; color: var(--muted); border-color: var(--border-lit); }
 .btn-ghost:hover { color: var(--accent); border-color: var(--accent); }
+.btn-secondary { background: rgba(255,255,255,.04); color: var(--text); border-color: var(--border-lit); }
+.btn-secondary:hover { background: rgba(255,255,255,.08); border-color: var(--accent); color: var(--accent); }
 .btn-danger { background: transparent; color: var(--red); border-color: rgba(209,61,41,.4); }
 .btn-danger:hover { background: var(--red); color: white; }
 .btn-block { width: 100%; justify-content: center; }
@@ -476,6 +478,18 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 .top5-head h3 { font-size: 18px; }
 .top5-head h3 i { color: var(--lima); margin-right: 8px; }
 .top5-list { display: grid; gap: 14px; }
+
+/* Layout dual: MAPEX x Não-MAPEX lado a lado */
+.top5-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.top5-grupo { background: rgba(255,255,255,.02); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.top5-grupo-mapex { border-color: rgba(255, 200, 60, .35); background: linear-gradient(180deg, rgba(255, 200, 60, .06), rgba(255, 200, 60, .01)); }
+.top5-grupo-head { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
+.top5-grupo-head h4 { font-size: 14px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.top5-grupo-head h4 .mapex-badge { font-size: 11px; padding: 3px 8px; }
+.top5-grupo-head small { display: block; color: var(--muted); margin-top: 4px; font-size: 11px; }
+@media (max-width: 900px) {
+  .top5-duo { grid-template-columns: 1fr; }
+}
 .top5-card {
   display: grid; grid-template-columns: 56px 1fr auto; gap: 18px;
   background: var(--surface);
@@ -1025,4 +1039,125 @@ body.login-success .login-form {
     transition-duration: .001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================
+   MODAL: SOLICITAÇÃO ENVIADA (confirmação visual após signup)
+   ============================================================ */
+.solic-enviada-box {
+  max-width: 440px;
+  text-align: center;
+  padding: 36px 28px 28px;
+  background: var(--surface);
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  animation: solicEnviadaIn .5s cubic-bezier(.18,.89,.32,1.28) both;
+}
+@keyframes solicEnviadaIn {
+  0%   { transform: scale(.85) translateY(10px); opacity: 0; }
+  100% { transform: scale(1) translateY(0);     opacity: 1; }
+}
+
+.solic-enviada-icon {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  margin: 0 auto 18px;
+  box-shadow: 0 10px 30px rgba(0,120,64,.35);
+  position: relative;
+  animation: solicPulse 2.4s ease-in-out infinite;
+}
+.solic-enviada-icon::after {
+  /* Anel pulsante ao redor do ícone — reforça visualmente o "sucesso" */
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--lima);
+  opacity: 0;
+  animation: solicRing 2.4s ease-out infinite;
+}
+@keyframes solicPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.04); }
+}
+@keyframes solicRing {
+  0%   { transform: scale(1);   opacity: .9; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.solic-enviada-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+  font-family: var(--font);
+}
+
+.solic-enviada-sub {
+  font-size: 15px;
+  color: var(--muted);
+  margin-bottom: 22px;
+  line-height: 1.4;
+}
+.solic-enviada-sub b {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.solic-enviada-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--surface2);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 10px;
+  border-left: 3px solid var(--yellow);
+  text-align: left;
+}
+.solic-enviada-info i {
+  color: var(--yellow);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.solic-enviada-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--surface2);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 22px;
+  text-align: left;
+  word-break: break-all;
+}
+.solic-enviada-detail i {
+  color: var(--accent);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.solic-enviada-actions {
+  margin-top: 6px;
+}
+.solic-enviada-actions .btn-block {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
 }

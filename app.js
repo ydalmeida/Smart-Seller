@@ -696,37 +696,42 @@ $('#signupForm').addEventListener('submit', async (e) => {
   APP_MODE = firebaseOk ? 'firebase' : 'local';
 
   if (firebaseOk) {
-    // Antes de criar a conta, verifica se ela já existe no Firebase Auth.
-    // Isso evita o erro genérico "auth/email-already-in-use" e dá uma mensagem
-    // clara para o usuário — ele pode estar tentando se cadastrar com um
-    // email que já foi usado num teste anterior ou por outro consultor.
+    // Antes de criar a conta, verifica se o email já tem cadastro no
+    // Firebase Auth usando fetchSignInMethodsForEmail (NÃO tenta logar com
+    // a senha — isso evita o problema do Firebase retornar
+    // "auth/invalid-credential" tanto pra email inexistente quanto pra
+    // senha errada, o que fazia o sistema mostrar "email já possui cadastro
+    // com outra senha" mesmo quando o email nunca foi usado).
     try {
-      await firebaseAuth.signInWithEmailAndPassword(email, pass);
-      // Login funcionou → a conta já existe. Descobre o status dela no Firestore
-      // e informa o usuário com precisão.
-      const user = firebaseAuth.currentUser;
-      const role = await carregarRoleUsuario(user.uid, user.email);
-      await firebaseAuth.signOut(); // não deixa o usuário entrar
-      if (role === 'pendente') {
-        status.textContent = `Já existe uma solicitação com este email. Aguarde o administrador aprovar.`;
-      } else if (role === 'recusado') {
-        status.textContent = `Este email foi recusado pelo administrador. Fale com a equipe para liberar.`;
-      } else if (role === 'consultor' || role === 'admin') {
-        status.textContent = `Este email já possui cadastro. Use o botão "Entrar" para fazer login.`;
-      } else {
-        status.textContent = `Este email já possui cadastro. Use o botão "Entrar" para fazer login.`;
-      }
-      return;
-    } catch (preErr) {
-      // Se o erro for de credencial inválida (não é "user not found"), significa
-      // que a senha está errada — ou seja, a conta existe com outra senha.
-      if (preErr.code === 'auth/invalid-credential' || preErr.code === 'auth/wrong-password') {
-        status.textContent = `Este email já possui cadastro com outra senha. Fale com o administrador para recuperar o acesso.`;
+      const methods = await firebaseAuth.fetchSignInMethodsForEmail(email);
+      if (methods && methods.length > 0) {
+        // Email já tem cadastro no Auth. Consulta o status no Firestore
+        // pra dar uma mensagem útil ao usuário.
+        // (Não tentamos logar de propósito — não queremos disparar
+        // onAuthStateChanged nem criar sessão.)
+        try {
+          const providers = await firebaseAuth.signInWithEmailAndPassword(email, pass);
+          const user = providers.user;
+          const role = await carregarRoleUsuario(user.uid, user.email);
+          await firebaseAuth.signOut();
+          if (role === 'pendente') {
+            status.textContent = `Já existe uma solicitação com este email. Aguarde o administrador aprovar.`;
+          } else if (role === 'recusado') {
+            status.textContent = `Este email foi recusado pelo administrador. Fale com a equipe para liberar.`;
+          } else {
+            status.textContent = `Este email já possui cadastro. Use o botão "Entrar" para fazer login.`;
+          }
+        } catch (pwdErr) {
+          // Email existe mas a senha digitada está errada.
+          status.textContent = `Este email já possui cadastro com outra senha. Fale com o administrador para recuperar o acesso.`;
+        }
         return;
       }
-      // auth/user-not-found → email livre, podemos criar a conta.
-      // Outros erros (network, etc.) → deixa cair no createUserWithEmailAndPassword
+      // methods.length === 0 → email livre, pode criar a conta.
+    } catch (probeErr) {
+      // Se a checagem falhar (rede etc), deixa cair no createUserWithEmailAndPassword
       // que vai dar a mensagem apropriada.
+      console.warn('fetchSignInMethodsForEmail falhou:', probeErr);
     }
 
     try {
@@ -744,9 +749,8 @@ $('#signupForm').addEventListener('submit', async (e) => {
       });
       await firebaseAuth.signOut(); // não deixa entrar enquanto estiver pendente
       status.textContent = '';
-      toast('Solicitação enviada! Aguarde o administrador aprovar seu acesso.', 'success', 6000);
+      mostrarConfirmacaoSolicitacao(email, nome);
       $('#signupForm').reset();
-      $('#btnVoltarLogin').click();
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
         // Fallback: caso a verificação prévia tenha falhado (ex: race condition),
@@ -777,9 +781,54 @@ $('#signupForm').addEventListener('submit', async (e) => {
   });
   setLocalUsers(users);
   status.textContent = '';
-  toast('Solicitação enviada! Aguarde o administrador aprovar seu acesso (neste navegador).', 'success', 6000);
+  mostrarConfirmacaoSolicitacao(email, nome);
   $('#signupForm').reset();
-  $('#btnVoltarLogin').click();
+});
+
+// =========================================================
+// MODAL: SOLICITAÇÃO ENVIADA (confirmação visual após signup)
+// Exibido tanto no modo Firebase quanto no modo local, logo depois que o
+// consultor envia a solicitação. Mostra um overlay destacado com ícone de
+// sucesso, mensagem "Solicitação enviada para o Administrador" e instrução
+// clara para aguardar a aprovação. Ao fechar, volta para a tela de login.
+// =========================================================
+function mostrarConfirmacaoSolicitacao(email, nome) {
+  const modal = $('#solicEnviadaModal');
+  if (!modal) {
+    // Fallback de segurança: se o modal não existir no DOM, mostra o toast
+    toast('Solicitação enviada para o Administrador. Aguarde a aprovação.', 'success', 8000);
+    $('#btnVoltarLogin').click();
+    return;
+  }
+  // Preenche o email pra dar feedback concreto ao usuário
+  const elEmail = $('#solicEnviadaEmail');
+  if (elEmail) elEmail.textContent = email || '—';
+  // Mostra o modal
+  modal.style.display = 'flex';
+  // Foco no botão "Entendi" pra permitir fechar com Enter
+  setTimeout(() => {
+    const btn = $('#btnFecharSolicEnviada');
+    if (btn) btn.focus();
+  }, 80);
+}
+
+function fecharConfirmacaoSolicitacao() {
+  const modal = $('#solicEnviadaModal');
+  if (modal) modal.style.display = 'none';
+  // Volta o usuário para a tela de login (e fecha o form de cadastro)
+  const signupBox = $('#signupBox');
+  const loginForm = $('#loginForm');
+  if (signupBox) signupBox.style.display = 'none';
+  if (loginForm) loginForm.closest('.login-box').style.display = '';
+}
+
+// Listener do botão de fechar o modal de confirmação
+$('#btnFecharSolicEnviada').addEventListener('click', fecharConfirmacaoSolicitacao);
+// Permite fechar com ESC também
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#solicEnviadaModal')?.style.display !== 'none') {
+    fecharConfirmacaoSolicitacao();
+  }
 });
 
 $('#btnSair').addEventListener('click', async () => {
@@ -905,6 +954,8 @@ async function consultar() {
       categoriaInferida: top5.categoriaInferidaNome,
       iaDisponivel
     });
+    // guarda estado pra usar na chamada de IA
+    window._ultimoTop5 = top5;
     $('#loadingBox').style.display = 'none';
     $('#empresaBox').style.display = 'block';
     $('#top5Box').style.display = 'block';
@@ -915,7 +966,7 @@ async function consultar() {
       uid: STATE.user?.uid || 'anon',
       userEmail: STATE.user?.email || '—',
       cnpj: empresa.cnpj, empresa: empresa.razao, cnae: empresa.cnae, uf: empresa.uf,
-      top1: top5.itensFinais[0]?.nome || '—'
+      top1: top5.itensFinais?.mapex?.[0]?.nome || top5.itensFinais?.semMapex?.[0]?.nome || '—'
     });
     STATE.historico = STATE.historico.slice(0, 50);
     salvarLocal(); renderHistorico();
@@ -1030,6 +1081,50 @@ function inferirCategoria(empresa) {
 function ehProdutoEnterprise(produto) {
   const txt = `${produto.nome || ''} ${produto.categoria || ''}`.toLowerCase();
   return PRODUTOS_ENTERPRISE.some(p => txt.includes(p));
+}
+
+// =========================================================
+// DIVERSIFICAÇÃO POR TIPO DE PRODUTO
+// =========================================================
+// Extrai a "primeira palavra significativa" do nome — usada como tipo de
+// produto. Ex.: "SHAMPOO ELSEVE ANTICASPA 200ML" → "shampoo".
+// Se duas palavras conhecidas estiverem presentes, prioriza a mais
+// discriminante (ex.: "KIT SHAMPOO + CONDICIONADOR" → "shampoo").
+const PALAVRAS_TIPO_CONHECIDAS = [
+  'shampoo', 'condicionador', 'creme', 'mascara', 'mascara', 'sabonete',
+  'desodorante', 'protetor', 'repelente', 'perfume', 'colonia',
+  'hidratante', 'oleo', 'gel', 'esmalte', 'base', 'batom', 'rimel',
+  'aparelho', 'lamina', 'escova', 'pasta', 'enxaguante', 'fio',
+  'fralda', 'absorvente', 'talco', 'agua', 'tinta', 'tintura',
+  'carga', 'escova', 'pente', 'kit', 'locion', 'cabelo'
+];
+function tipoDoProduto(produto) {
+  const nome = (produto?.nome || '').toLowerCase();
+  // Tenta match da palavra mais específica primeiro (palavras mais longas)
+  const palavras = nome.split(/[^a-z0-9]+/).filter(Boolean);
+  // Procura uma palavra conhecida presente no nome
+  for (const w of palavras) {
+    if (PALAVRAS_TIPO_CONHECIDAS.includes(w)) return w;
+  }
+  // Se nenhuma conhecida, usa a primeira palavra significativa (>=4 chars)
+  const primeira = palavras.find(p => p.length >= 4);
+  return primeira || palavras[0] || 'outros';
+}
+
+// Diversifica a lista: pega itens na ordem, mas pula itens cujo "tipo"
+// já apareceu. Mantém até `limite` itens (ou menos se não houver tipos
+// distintos suficientes).
+function diversificarPorTipo(resultados, limite) {
+  const escolhidos = [];
+  const tiposVistos = new Set();
+  for (const r of resultados) {
+    const tipo = tipoDoProduto(r.produto);
+    if (tiposVistos.has(tipo)) continue;
+    tiposVistos.add(tipo);
+    escolhidos.push(r);
+    if (escolhidos.length >= limite) break;
+  }
+  return escolhidos;
 }
 
 function calcularTop5(empresa) {
@@ -1191,9 +1286,30 @@ function calcularTop5(empresa) {
 
   // ----- 4) Ordena e seleciona Top 7 (1 a mais que o final, pra IA poder excluir 1 se quiser) -----
   resultados.sort((a, b) => b.score - a.score);
-  const top7 = resultados.slice(0, 7);
-  const top5 = resultados.slice(0, 5);
-  const afinidade = Math.round(top5.reduce((s, r) => s + r.score, 0) / top5.length);
+
+  // Particiona resultados por flag MAPEX
+  const resultadosMapex = resultados.filter(r => r.produto && r.produto.mapex === true);
+  const resultadosSemMapex = resultados.filter(r => !r.produto || r.produto.mapex !== true);
+
+  // Diversifica por "tipo de produto" (primeira palavra significativa)
+  // - top7 de cada grupo: até 7 tipos distintos (pool pra IA)
+  // - top5 de cada grupo: até 5 tipos distintos (mostrado ao usuário)
+  const top7Mapex = diversificarPorTipo(resultadosMapex, 7);
+  const top5Mapex = diversificarPorTipo(resultadosMapex, 5);
+  const top7SemMapex = diversificarPorTipo(resultadosSemMapex, 7);
+  const top5SemMapex = diversificarPorTipo(resultadosSemMapex, 5);
+
+  // Pool enviado pra IA: separado por MAPEX (até 7 cada) para chamada paralela
+  const top7 = {
+    mapex: top7Mapex,
+    semMapex: top7SemMapex
+  };
+
+  // Afinidade = média dos scores do Top 5 MAPEX + Top 5 Sem MAPEX (apenas os que existem)
+  const todosFinais = top5Mapex.concat(top5SemMapex);
+  const afinidade = todosFinais.length
+    ? Math.round(todosFinais.reduce((s, r) => s + r.score, 0) / todosFinais.length)
+    : 0;
 
   // ----- 5) Detecta se é fallback (nenhum match direto) -----
   const temMatchDireto = resultados.some(r =>
@@ -1202,8 +1318,11 @@ function calcularTop5(empresa) {
   const fallbackSimilaridade = !temMatchDireto;
 
   return {
-    itens: top7,                 // IA recebe 7 candidatos
-    itensFinais: top5.slice(),   // UI recebe 5 (vai ser sobrescrito pela IA se ela responder)
+    itens: top7,                          // IA recebe até 7+7 candidatos (MAPEX + Sem MAPEX)
+    itensFinais: {                        // UI recebe 2 listas independentes
+      mapex: top5Mapex.slice(),
+      semMapex: top5SemMapex.slice()
+    },
     afinidade,
     fallbackSimilaridade,
     categoriaInferidaNome
@@ -1230,18 +1349,58 @@ function renderEmpresa(empresa, afinidade) {
 // =========================================================
 // RENDER TOP 5
 // =========================================================
+// itens = { mapex: [...], semMapex: [...] }
 function renderTop5(itens, empresa, opcoes = {}) {
   // opcoes = { fallbackSimilaridade, categoriaInferida, iaDisponivel }
-  const list = $('#top5List');
-  list.innerHTML = '';
-  // Aviso de "match por similaridade" quando o algoritmo não achou nada direto
+  const listaMapex = $('#top5ListMapex');
+  const listaSemMapex = $('#top5ListSemMapex');
+  if (listaMapex) listaMapex.innerHTML = '';
+  if (listaSemMapex) listaSemMapex.innerHTML = '';
+
+  // Backward compat: se itensFinais veio como array, transforma em objeto
+  if (Array.isArray(itens)) {
+    itens = { mapex: [], semMapex: itens };
+  }
+
+  // Aviso geral no topo (uma vez só)
+  const avisoGeral = document.createElement('div');
   if (opcoes.fallbackSimilaridade) {
-    const warn = document.createElement('div');
-    warn.className = 'aviso-similaridade';
-    warn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ` +
+    avisoGeral.className = 'aviso-similaridade';
+    avisoGeral.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ` +
       `Nenhum produto deste catálogo tem match direto com o CNAE do cliente. ` +
       `Recomendação por similaridade${opcoes.categoriaInferida ? ` (categoria inferida: <b>${opcoes.categoriaInferida}</b>)` : ''}.`;
-    list.appendChild(warn);
+    // Insere no topo da primeira lista não-vazia
+    const alvo = (itens.mapex && itens.mapex.length) ? listaMapex : listaSemMapex;
+    if (alvo) alvo.appendChild(avisoGeral.cloneNode(true));
+    else if (listaMapex) listaMapex.appendChild(avisoGeral);
+  }
+
+  renderListaTop5(itens.mapex || [], listaMapex, opcoes);
+  renderListaTop5(itens.semMapex || [], listaSemMapex, opcoes);
+
+  // Re-liga os listeners dos botões "Ver detalhes" após o render.
+  // Usamos forEach porque innerHTML acima recriou os elementos.
+  ligarBotoesDetalhesProduto();
+}
+
+// Renderiza uma única lista (MAPEX ou Sem MAPEX) no container informado.
+// Suporta lista vazia — mostra mensagem "Nenhum produto disponível nesta categoria".
+function renderListaTop5(itens, list, opcoes) {
+  if (!list) return;
+  // Aviso de diversificação: quando há menos de 5 tipos distintos
+  if (itens.length > 0 && itens.length < 5) {
+    const nota = document.createElement('div');
+    nota.className = 'aviso-similaridade';
+    nota.innerHTML = `<i class="fa-solid fa-lightbulb"></i> ` +
+      `Mostrando ${itens.length} recomendação${itens.length > 1 ? 'ões' : ''} — o catálogo relevante não tem tipos de produto suficientes para preencher 5 vagas distintas.`;
+    list.appendChild(nota);
+  }
+  if (!itens.length) {
+    const vazio = document.createElement('div');
+    vazio.className = 'empty-msg';
+    vazio.textContent = 'Nenhum produto disponível nesta categoria para o cliente.';
+    list.appendChild(vazio);
+    return;
   }
   itens.forEach((it, i) => {
     const p = it.produto;
@@ -1277,9 +1436,6 @@ function renderTop5(itens, empresa, opcoes = {}) {
     `;
     list.appendChild(card);
   });
-  // Re-liga os listeners dos botões "Ver detalhes" após o render.
-  // Usamos forEach porque innerHTML acima recriou os elementos.
-  ligarBotoesDetalhesProduto();
 }
 
 // =========================================================
@@ -1484,12 +1640,16 @@ const QUEBRAS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 // Event delegation: relink os botões [data-ver-detalhes] que existirem agora.
 // Chamado após cada render do Top 5 (inicial e pós-IA).
 function ligarBotoesDetalhesProduto() {
-  $$('#top5List [data-ver-detalhes]').forEach(b => {
-    // Evita listener duplicado se a função for chamada mais de uma vez
-    // sobre o mesmo botão. Marcamos o elemento como "já ligado".
-    if (b._detalhesListenerOk) return;
-    b._detalhesListenerOk = true;
-    b.addEventListener('click', () => abrirDetalhesProduto(b.dataset.verDetalhes));
+  // Suporta tanto o container antigo (#top5List) quanto os novos (#top5ListMapex, #top5ListSemMapex)
+  const containers = ['#top5List', '#top5ListMapex', '#top5ListSemMapex'].map(sel => $(sel)).filter(Boolean);
+  containers.forEach(container => {
+    container.querySelectorAll('[data-ver-detalhes]').forEach(b => {
+      // Evita listener duplicado se a função for chamada mais de uma vez
+      // sobre o mesmo botão. Marcamos o elemento como "já ligado".
+      if (b._detalhesListenerOk) return;
+      b._detalhesListenerOk = true;
+      b.addEventListener('click', () => abrirDetalhesProduto(b.dataset.verDetalhes));
+    });
   });
 }
 
@@ -1707,20 +1867,69 @@ $('#btnFecharDetalhesProd2').addEventListener('click', fecharDetalhesProduto);
 // Score final = 60% IA + 40% algoritmo (com fallback gracioso).
 // =========================================================
 async function enriquecerComIA(itens, empresa, itensFinais, opcoes) {
+  // itens = { mapex: [...], semMapex: [...] } - pool enviado pra IA
+  // itensFinais = { mapex: [...], semMapex: [...] } - até 5 itens em cada grupo
+  // Backward compat: se veio array, transforma em objeto
+  if (Array.isArray(itensFinais)) {
+    itensFinais = { mapex: [], semMapex: itensFinais };
+  }
+  if (Array.isArray(itens)) {
+    itens = { mapex: [], semMapex: itens };
+  }
   // Sem chave Groq → mantém o resultado algorítmico como está e remove o
   // spinner dos cards (UX atual preservada).
   if (!STATE.config.groq.apiKey) {
-    itensFinais.forEach((it, i) => {
-      const m = $(`#motivo-${i}`);
-      if (m) {
-        m.classList.remove('loading');
-        m.innerHTML = `<i class="fa-solid fa-info-circle"></i> ${it.motivo.join(' • ') || 'Recomendado pelo algoritmo de scoring.'}`;
+    const limparSpinners = (lista, containerId) => {
+      if (!lista) return;
+      lista.forEach((it, i) => {
+        const m = $(`#${containerId} .top5-motivo`); // não há IDs únicos
+        // não temos IDs únicos por card nos novos containers — limpa via classe
+      });
+      const container = $('#' + containerId);
+      if (container) {
+        container.querySelectorAll('.top5-motivo.loading').forEach((m, idx) => {
+          const it = lista[idx];
+          m.classList.remove('loading');
+          m.innerHTML = `<i class="fa-solid fa-info-circle"></i> ${(it && it.motivo && it.motivo.join(' • ')) || 'Recomendado pelo algoritmo de scoring.'}`;
+        });
       }
-    });
+    };
+    limparSpinners(itensFinais.mapex, 'top5ListMapex');
+    limparSpinners(itensFinais.semMapex, 'top5ListSemMapex');
     return;
   }
 
-  // Monta o prompt estruturado. Inserimos os IDs (1..7) pra IA referenciar
+  // Chama IA para os dois grupos em paralelo
+  const listaParaRender = { mapex: [], semMapex: [] };
+  await Promise.all([
+    enriquecerListaIA(itens.mapex || [], itensFinais.mapex || [], empresa, opcoes, 'top5ListMapex').then(r => { listaParaRender.mapex = r; }),
+    enriquecerListaIA(itens.semMapex || [], itensFinais.semMapex || [], empresa, opcoes, 'top5ListSemMapex').then(r => { listaParaRender.semMapex = r; })
+  ]);
+
+  // Atualiza afinidade geral baseada nos scores finais combinados
+  const todosFinais = listaParaRender.mapex.concat(listaParaRender.semMapex);
+  if (todosFinais.length) {
+    const afin = Math.round(todosFinais.reduce((s, r) => s + r.score, 0) / todosFinais.length);
+    const circle = $('#scoreCircle');
+    if (circle) circle.style.setProperty('--p', afin + '%');
+    const sv = $('#scoreValue');
+    if (sv) sv.textContent = afin;
+  }
+}
+
+// Enriquece UMA lista (MAPEX ou Sem MAPEX) com a IA.
+// - itens: top7 do grupo (até 7 candidatos)
+// - itensFinais: top5 do grupo (até 5 itens — onde fica o resultado final)
+// - containerId: id do container DOM onde fica a lista
+// Retorna o array final (até 5 itens) com score/confianca atualizados.
+async function enriquecerListaIA(itens, itensFinais, empresa, opcoes, containerId) {
+  // Se não tem nada pra processar, sai cedo
+  if (!itens.length || !itensFinais.length) {
+    limparSpinners(containerId, itensFinais);
+    return itensFinais;
+  }
+
+  // Monta o prompt estruturado. Inserimos os IDs (1..N) pra IA referenciar
   // os produtos sem ambiguidade.
   const secundTxt = (empresa.cnaesSecundarios || []).slice(0, 6)
     .map(c => `${c.codigo} (${c.descricao})`).join('; ') || 'nenhum';
@@ -1842,8 +2051,10 @@ Responda APENAS o JSON puro, sem markdown.`;
     }
     const finalItens = combinados.slice(0, 5);
 
-    // ===== Re-render (sobrescreve os cards com a versão final da IA) =====
-    $('#top5List').innerHTML = '';
+    // ===== Re-render (sobrescreve os cards com a versão final da IA) no container do grupo =====
+    const container = $('#' + containerId);
+    if (!container) return finalItens;
+    container.innerHTML = '';
     // Aviso de fallback continua se aplicável
     if (opcoes.fallbackSimilaridade) {
       const warn = document.createElement('div');
@@ -1851,7 +2062,7 @@ Responda APENAS o JSON puro, sem markdown.`;
       warn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ` +
         `Nenhum produto deste catálogo tem match direto com o CNAE do cliente. ` +
         `Recomendação por similaridade${opcoes.categoriaInferida ? ` (categoria inferida: <b>${opcoes.categoriaInferida}</b>)` : ''}.`;
-      $('#top5List').appendChild(warn);
+      container.appendChild(warn);
     }
     finalItens.forEach((it, i) => {
       const p = it.produto;
@@ -1879,28 +2090,33 @@ Responda APENAS o JSON puro, sem markdown.`;
           ${p && p.id ? `<button class="btn-card-action" data-ver-detalhes="${p.id}" type="button" title="Ver resumo e quebras de objeção por IA"><i class="fa-solid fa-eye"></i> Ver detalhes</button>` : ''}
         </div>
       `;
-      $('#top5List').appendChild(card);
+      container.appendChild(card);
     });
     // Re-liga os listeners dos botões "Ver detalhes" após o re-render.
     ligarBotoesDetalhesProduto();
-
-    // Atualiza afinidade geral baseada no score final combinado
-    const afin = Math.round(finalItens.reduce((s, r) => s + r.score, 0) / finalItens.length);
-    const circle = $('#scoreCircle');
-    if (circle) circle.style.setProperty('--p', afin + '%');
-    const sv = $('#scoreValue');
-    if (sv) sv.textContent = afin;
+    return finalItens;
   } catch (e) {
     console.warn('IA falhou:', e);
     // Fallback: deixa o resultado algorítmico no lugar e remove spinner
-    itensFinais.forEach((it, i) => {
-      const m = $(`#motivo-${i}`);
-      if (m) {
-        m.classList.remove('loading');
-        m.innerHTML = `<i class="fa-solid fa-exclamation-triangle" style="color:var(--yellow)"></i> IA indisponível: ${e.message.slice(0, 60)}. ${it.motivo.join(' • ')}`;
-      }
-    });
+    limparSpinners(containerId, itensFinais, e.message);
+    return itensFinais;
   }
+}
+
+// Helper: limpa spinners e preenche motivos em uma lista após IA.
+// Se `erroMsg` for fornecido, mostra aviso de IA indisponível.
+function limparSpinners(containerId, itensFinais, erroMsg) {
+  const container = $('#' + containerId);
+  if (!container) return;
+  container.querySelectorAll('.top5-motivo.loading').forEach((m, idx) => {
+    const it = (itensFinais || [])[idx];
+    m.classList.remove('loading');
+    if (erroMsg) {
+      m.innerHTML = `<i class="fa-solid fa-exclamation-triangle" style="color:var(--yellow)"></i> IA indisponível: ${erroMsg.slice(0, 60)}. ${(it && it.motivo) ? it.motivo.join(' • ') : ''}`;
+    } else {
+      m.innerHTML = `<i class="fa-solid fa-info-circle"></i> ${(it && it.motivo && it.motivo.join(' • ')) || 'Recomendado pelo algoritmo de scoring.'}`;
+    }
+  });
 }
 
 // Deriva o nível de confiança a partir do score numérico (fallback quando
@@ -2000,6 +2216,40 @@ function renderProdutos() {
 
 $('#prodBusca').addEventListener('input', renderProdutos);
 $('#prodFiltroCat').addEventListener('change', renderProdutos);
+
+$('#btnImportarArcom').addEventListener('click', async () => {
+  if (!isAdmin()) {
+    toast('Apenas administradores podem importar produtos.', 'error');
+    return;
+  }
+  if (!Array.isArray(window.PRODUTOS_ARCOM_SEED) || !window.PRODUTOS_ARCOM_SEED.length) {
+    toast('Seed ARCOM não carregado.', 'error');
+    return;
+  }
+  if (!confirm(`Importar ${window.PRODUTOS_ARCOM_SEED.length} produtos do catálogo ARCOM (Higiene e Beleza)? Produtos duplicados (mesmo nome+marca) serão ignorados.`)) return;
+
+  const chaves = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
+  const novos = window.PRODUTOS_ARCOM_SEED
+    .filter(p => !chaves.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()))
+    .map(p => ({
+      ...p,
+      id: getId(),
+      nome: (p.nome || '').toString(),
+      marca: (p.marca || '').toString(),
+      categoria: p.categoria || 'Higiene e Beleza',
+      mapex: p.mapex === true
+    }));
+  if (!novos.length) {
+    toast('Todos os produtos do catálogo ARCOM já estão cadastrados.', 'info');
+    return;
+  }
+  STATE.produtos = STATE.produtos.concat(novos);
+  salvarLocal();
+  if (firebaseDb) await salvarNoFirestore();
+  renderProdutos();
+  renderTop5();
+  toast(`${novos.length} produtos ARCOM importados (incluindo ${novos.filter(p => p.mapex).length} MAPEX).`, 'success', 4000);
+});
 
 $('#btnNovoProduto').addEventListener('click', () => {
   if (!isAdmin()) {
@@ -2877,23 +3127,26 @@ $('#btnExportar').addEventListener('click', async () => {
   // Inicializa seed de produtos se for primeira vez (só local)
   if (!STATE.produtos || !STATE.produtos.length) {
     STATE.produtos = window.PRODUTOS_SEED.map(p => ({ ...p, id: getId() }));
-    // Adiciona produtos do catálogo ARCOM (Higiene e Beleza), se disponível
-    if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
-      const arcom = window.PRODUTOS_ARCOM_SEED.map(p => ({
-        ...p,
-        id: getId(),
-        // Normaliza nome/marca vindos do seed para garantir busca funciona
-        nome: (p.nome || '').toString(),
-        marca: (p.marca || '').toString(),
-        categoria: p.categoria || 'Higiene e Beleza',
-        mapex: p.mapex === true
-      }));
-      // Evita duplicar se a lista já estiver parcialmente populada
-      const chavesExistentes = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
-      const novos = arcom.filter(p => !chavesExistentes.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
-      STATE.produtos = STATE.produtos.concat(novos);
-    }
     salvarLocal();
+  }
+
+  // Mescla produtos do catálogo ARCOM (Higiene e Beleza) sempre que o seed estiver disponível.
+  // É idempotente: só adiciona produtos que ainda não existem na lista.
+  if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
+    const arcom = window.PRODUTOS_ARCOM_SEED.map(p => ({
+      ...p,
+      id: getId(),
+      nome: (p.nome || '').toString(),
+      marca: (p.marca || '').toString(),
+      categoria: p.categoria || 'Higiene e Beleza',
+      mapex: p.mapex === true
+    }));
+    const chavesExistentes = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
+    const novos = arcom.filter(p => !chavesExistentes.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
+    if (novos.length) {
+      STATE.produtos = STATE.produtos.concat(novos);
+      salvarLocal();
+    }
   }
 
   // Tenta conectar Firebase automaticamente (só se a config for válida e real)
@@ -2921,6 +3174,26 @@ $('#btnExportar').addEventListener('click', async () => {
           STATE.user = { email: user.email, uid: user.uid, role };
           // Carrega dados do Firestore (se conseguir)
           await carregarDoFirestore();
+          // Re-mescla ARCOM após carregar do Firestore (Firestore pode ter sobrescrito a lista local)
+          if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
+            const chaves = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
+            const arcom = window.PRODUTOS_ARCOM_SEED
+              .filter(p => !chaves.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()))
+              .map(p => ({
+                ...p,
+                id: getId(),
+                nome: (p.nome || '').toString(),
+                marca: (p.marca || '').toString(),
+                categoria: p.categoria || 'Higiene e Beleza',
+                mapex: p.mapex === true
+              }));
+            if (arcom.length) {
+              STATE.produtos = STATE.produtos.concat(arcom);
+              // Persiste no Firestore para futuras sessões
+              if (firebaseDb) await salvarNoFirestore();
+              salvarLocal();
+            }
+          }
           mostrarApp();
         } else {
           // Sem usuário no Firebase → mostra splash (primeiro acesso / deslogado)

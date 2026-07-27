@@ -212,10 +212,27 @@
           <!-- Resultado: Top 5 -->
           <div id="top5Box" class="top5-box" style="display:none">
             <div class="top5-head">
-              <h3><i class="fa-solid fa-trophy"></i> Top 5 produtos recomendados</h3>
+              <h3><i class="fa-solid fa-trophy"></i> Recomendações para o cliente</h3>
               <button class="btn-ghost" id="btnExportar"><i class="fa-solid fa-file-export"></i> Exportar PDF</button>
             </div>
-            <div id="top5List" class="top5-list"></div>
+
+            <div class="top5-duo">
+              <div class="top5-grupo top5-grupo-mapex">
+                <div class="top5-grupo-head">
+                  <h4><span class="mapex-badge"><i class="fa-solid fa-star"></i> MAPEX</span> Top 5 produtos MAPEX</h4>
+                  <small>Produtos prioritários / exclusivos</small>
+                </div>
+                <div id="top5ListMapex" class="top5-list"></div>
+              </div>
+
+              <div class="top5-grupo top5-grupo-sem-mapex">
+                <div class="top5-grupo-head">
+                  <h4>Top 5 demais produtos</h4>
+                  <small>Produtos sem flag MAPEX</small>
+                </div>
+                <div id="top5ListSemMapex" class="top5-list"></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -247,7 +264,12 @@
               <h1>Catálogo de produtos</h1>
               <p class="muted" id="produtosHelp">Cadastre os produtos que o Top 5 vai recomendar. Preencha <strong>CNAEs compatíveis</strong> e <strong>UFs compatíveis</strong> para melhorar o match.</p>
             </div>
-            <button class="btn-primary only-admin" id="btnNovoProduto"><i class="fa-solid fa-plus"></i> Novo produto</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn-secondary only-admin" id="btnImportarArcom" title="Importa o catálogo ARCOM Higiene e Beleza (1.018 produtos)">
+                <i class="fa-solid fa-file-import"></i> Importar ARCOM
+              </button>
+              <button class="btn-primary only-admin" id="btnNovoProduto"><i class="fa-solid fa-plus"></i> Novo produto</button>
+            </div>
           </div>
 
           <div id="consultorAviso" class="consultor-aviso" style="display:none">
@@ -455,6 +477,34 @@
 
   <!-- ============== TOASTS ============== -->
   <div id="toastBox" class="toast-box"></div>
+
+  <!-- ============== MODAL: SOLICITAÇÃO ENVIADA ============== -->
+  <!-- Overlay de confirmação exibido após o consultor enviar uma solicitação
+       de acesso. Mostra ícone de sucesso, mensagem clara "Solicitação
+       enviada para o Administrador" e instrução para aguardar aprovação.
+       Aparece tanto no modo Firebase quanto no modo local. -->
+  <div class="modal-overlay" id="solicEnviadaModal" style="display:none">
+    <div class="modal-box solic-enviada-box">
+      <div class="solic-enviada-icon">
+        <i class="fa-solid fa-paper-plane"></i>
+      </div>
+      <h3 class="solic-enviada-title">Solicitação enviada!</h3>
+      <p class="solic-enviada-sub">Sua solicitação foi enviada para o <b>Administrador</b>.</p>
+      <div class="solic-enviada-info">
+        <i class="fa-solid fa-hourglass-half"></i>
+        <span>Aguarde a aprovação para conseguir entrar no sistema.</span>
+      </div>
+      <div class="solic-enviada-detail">
+        <i class="fa-solid fa-envelope"></i>
+        <span id="solicEnviadaEmail">—</span>
+      </div>
+      <div class="solic-enviada-actions">
+        <button type="button" class="btn-primary btn-block" id="btnFecharSolicEnviada">
+          <i class="fa-solid fa-check"></i> Entendi, vou aguardar
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- ============== MODAL: VER DETALHES (CNPJ) ============== -->
   <!-- Abre ao clicar em "Ver detalhes" no card da empresa. Mostra os dados
