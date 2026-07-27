@@ -253,6 +253,30 @@ function fmtData(iso) {
 function getId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
 // =========================================================
+// MAPEX — diferenciação visual de produtos
+// Um produto é considerado MAPEX quando:
+//   1) tem o campo explícito `mapex: true` no objeto, OU
+//   2) a marca contém "MAPEX" (case-insensitive), OU
+//   3) o nome contém "MAPEX" (case-insensitive)
+// Mantém um fallback por texto para que produtos cadastrados manualmente
+// também sejam detectados como MAPEX, sem depender do campo.
+// =========================================================
+function ehMapex(produto) {
+  if (!produto) return false;
+  if (produto.mapex === true) return true;
+  const m = (produto.marca || '').toUpperCase();
+  const n = (produto.nome || '').toUpperCase();
+  return m.includes('MAPEX') || n.includes('MAPEX');
+}
+
+// Retorna o HTML do badge MAPEX (estrela + texto) para usar inline
+// ao lado do nome do produto. Vazio se não for MAPEX.
+function badgeMapex(produto) {
+  if (!ehMapex(produto)) return '';
+  return `<span class="mapex-badge" title="Produto MAPEX"><i class="fa-solid fa-star"></i> MAPEX</span>`;
+}
+
+// =========================================================
 // TEMA (claro/escuro)
 // =========================================================
 function initTema() {
@@ -839,6 +863,9 @@ async function consultar() {
     const resp = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
     if (!resp.ok) throw new Error('CNPJ não encontrado na Receita Federal.');
     const cnpj = await resp.json();
+    // Guarda o objeto bruto da BrasilAPI pra alimentar o modal "Ver detalhes"
+    // (telefones ddd_telefone_1/2, capital_social, etc., que não vão pro objeto "empresa").
+    window._ultimoCnpjBruto = cnpj;
 
     // 2) Mapeia para objeto empresa
     const empresa = {
@@ -866,6 +893,9 @@ async function consultar() {
     // 3) Calcular Top 5 (agora retorna 7 candidatos pra IA escolher 5,
     //    além de flag de fallback e categoria inferida).
     const top5 = calcularTop5(empresa);
+    // Guarda a empresa mapeada pro modal "Ver detalhes" (campos derivados:
+    // logradouro formatado, cidade/uf, etc.).
+    window._ultimaEmpresa = empresa;
 
     // 4) Render — passa info de fallback e se a IA está disponível
     const iaDisponivel = !!STATE.config.groq.apiKey;
@@ -1216,7 +1246,7 @@ function renderTop5(itens, empresa, opcoes = {}) {
   itens.forEach((it, i) => {
     const p = it.produto;
     const card = document.createElement('div');
-    card.className = 'top5-card';
+    card.className = 'top5-card' + (ehMapex(p) ? ' is-mapex' : '');
     const meta = `
       <span><b>${p.marca || '—'}</b></span>
       <span>${p.categoria || '—'}</span>
@@ -1233,7 +1263,7 @@ function renderTop5(itens, empresa, opcoes = {}) {
     card.innerHTML = `
       <div class="top5-rank">${i + 1}</div>
       <div class="top5-content">
-        <h4>${p.nome}</h4>
+        <h4>${p.nome}${badgeMapex(p)}</h4>
         <div class="meta">${meta}</div>
         <div class="top5-motivo loading" id="motivo-${i}">
           <i class="fa-solid fa-circle-notch fa-spin"></i> ${opcoes.iaDisponivel ? 'Reavaliando com IA…' : (it.motivo.length ? it.motivo.join(' • ') : 'Recomendado pelo algoritmo de scoring.')}
@@ -1242,15 +1272,433 @@ function renderTop5(itens, empresa, opcoes = {}) {
       <div class="top5-actions">
         <div class="top5-score">${it.score}<small>score</small></div>
         ${confHtml}
+        ${p && p.id ? `<button class="btn-card-action" data-ver-detalhes="${p.id}" type="button" title="Ver resumo e quebras de objeção por IA"><i class="fa-solid fa-eye"></i> Ver detalhes</button>` : ''}
       </div>
     `;
     list.appendChild(card);
   });
+  // Re-liga os listeners dos botões "Ver detalhes" após o render.
+  // Usamos forEach porque innerHTML acima recriou os elementos.
+  ligarBotoesDetalhesProduto();
 }
 
 // =========================================================
-// ENRIQUECIMENTO / RE-RANKING COM IA (Groq)
+// VER DETALHES (modal com Telefone da Receita + Telefone achado na web)
+// =========================================================
 //
+// Abre o modal #detalhesModal com os dados completos da Receita Federal
+// (BrasilAPI) e dispara a busca de telefone na web via Groq.
+//
+// BrasilAPI traz "ddd_telefone_1" / "ddd_telefone_2" no payload — usamos
+// esses como "Telefone (Receita Federal)".
+//
+// Para o "Telefone achado na web", usamos a Groq com a mesma chave que o
+// usuário já configurou em Configurações → IA. Se não houver chave,
+// apenas exibimos um aviso pedindo pra configurar.
+function fmtTelefoneBr(raw) {
+  if (!raw) return null;
+  const d = String(raw).replace(/\D/g, '');
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 8)  return `${d.slice(0, 4)}-${d.slice(4)}`;
+  if (d.length === 9)  return `${d.slice(0, 5)}-${d.slice(5)}`;
+  return raw;
+}
+function fmtMoeda(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  const v = Number(n);
+  if (isNaN(v)) return '—';
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+function fmtDataBR(iso) {
+  if (!iso) return '—';
+  const s = String(iso);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const [a, m, d] = s.slice(0, 10).split('-');
+    return `${d}/${m}/${a}`;
+  }
+  return s;
+}
+
+function abrirDetalhes() {
+  const bruto = window._ultimoCnpjBruto;
+  const empresa = window._ultimaEmpresa;
+  if (!bruto || !empresa) {
+    toast('Consulte um CNPJ antes de abrir os detalhes.', 'error');
+    return;
+  }
+  // Cabeçalho
+  $('#detalheCnpjLabel').textContent = bruto.cnpj || empresa.cnpj || '—';
+  $('#detalheRazaoLabel').textContent = empresa.razao || '—';
+
+  // Informações básicas
+  $('#detalheNomeFantasia').textContent = empresa.nomeFantasia || '—';
+  $('#detalheSituacao').textContent = empresa.status || bruto.descricao_situacao_cadastral || '—';
+  $('#detalhePorte').textContent = empresa.porte || '—';
+  $('#detalheNatureza').textContent = empresa.natureza || bruto.natureza_juridica || '—';
+  $('#detalheAbertura').textContent = fmtDataBR(empresa.dataInicioAtividade || bruto.data_inicio_atividade);
+  $('#detalheCapital').textContent = fmtMoeda(bruto.capital_social);
+  $('#detalheEndereco').textContent = empresa.logradouro
+    ? `${empresa.logradouro} — ${empresa.bairro || ''} — ${empresa.cidade || ''}/${empresa.uf || ''} (CEP ${empresa.cep || bruto.cep || '—'})`
+    : '—';
+
+  // Telefone da Receita Federal: BrasilAPI traz ddd_telefone_1 e ddd_telefone_2
+  const tel1 = bruto.ddd_telefone_1 ? fmtTelefoneBr(bruto.ddd_telefone_1) : null;
+  const tel2 = bruto.ddd_telefone_2 ? fmtTelefoneBr(bruto.ddd_telefone_2) : null;
+  if (tel1 || tel2) {
+    const txt = [tel1, tel2].filter(Boolean).join(' / ');
+    $('#detalheTelReceita').innerHTML = `<a href="tel:${(bruto.ddd_telefone_1 || bruto.ddd_telefone_2 || '').replace(/\D/g,'')}" style="color:var(--accent);text-decoration:none">${txt}</a>`;
+  } else {
+    $('#detalheTelReceita').textContent = 'Não informado';
+  }
+
+  // Telefone da Web: reseta o estado e dispara a busca
+  $('#detalheTelWeb').innerHTML = `<span class="detalhe-loading"><i class="fa-solid fa-circle-notch fa-spin"></i> buscando…</span>`;
+  $('#detalheTelWebOrigem').style.display = 'none';
+  $('#detalheTelWebDica').style.display = 'none';
+
+  $('#detalhesModal').style.display = 'flex';
+
+  // Dispara a busca de telefone na web (assíncrona — não bloqueia o modal)
+  buscarTelefoneWeb(empresa, bruto);
+}
+
+async function buscarTelefoneWeb(empresa, bruto) {
+  const elTel = $('#detalheTelWeb');
+  const elOrigem = $('#detalheTelWebOrigem');
+  const elDica = $('#detalheTelWebDica');
+
+  if (!STATE.config.groq.apiKey) {
+    elTel.textContent = '—';
+    elDica.style.display = '';
+    return;
+  }
+
+  // Telefone oficial serve pra cruzada de checagem
+  const telOficial = bruto.ddd_telefone_1 || '';
+  const telOficialFmt = fmtTelefoneBr(telOficial);
+
+  // Prompt enxuto e direto: a Groq (com sua busca) vai procurar o telefone
+  // da empresa na web e devolver SÓ o JSON, sem invenções.
+  const prompt = `Você é um assistente comercial brasileiro.
+Sua tarefa: encontrar o telefone de contato de uma empresa na web (site oficial, Google Maps, Instagram, LinkedIn, páginas amarelas).
+
+EMPRESA:
+- Razão social: ${empresa.razao}
+- Nome fantasia: ${empresa.nomeFantasia || 'não informado'}
+- Cidade/UF: ${empresa.cidade || ''}/${empresa.uf || ''}
+- CNPJ: ${empresa.cnpj}
+- Telefone JÁ CONHECIDO (Receita Federal): ${telOficialFmt || 'não informado'}
+
+REGRAS OBRIGATÓRIAS:
+1. Procure na web e devolva o telefone que aparecer EM UM SITE/REDES SOCIAIS/PERFIL COMERCIAL da empresa acima (não pode ser número genérico ou aleatório).
+2. Se o telefone da web for IGUAL ao da Receita, devolva-o mesmo assim (mas marque "igual_receita": true).
+3. Se NÃO encontrar com segurança, devolva null no campo "telefone" (NUNCA invente).
+4. NÃO inclua DDI (+55). Apenas DDD + número.
+
+Responda APENAS JSON puro, sem markdown:
+{"telefone": "(11) 91234-5678" ou null, "origem": "site oficial" ou "google_maps" ou "instagram" ou "linkedin" ou "outros" ou "nao_encontrado", "igual_receita": true|false}`;
+
+  try {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.config.groq.apiKey}`
+      },
+      body: JSON.stringify({
+        model: STATE.config.groq.modelo || 'llama-3.1-70b-versatile',
+        // Habilita a busca na web nativa da Groq (modelos com search)
+        tools: [{ type: 'browser_search' }],
+        messages: [
+          { role: 'system', content: 'Você é um assistente que busca telefones na web. Responda APENAS JSON válido, sem markdown.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.2,
+        max_tokens: 400
+      })
+    });
+    if (!resp.ok) throw new Error(`Groq ${resp.status}: ${(await resp.text()).slice(0, 100)}`);
+    const data = await resp.json();
+    const txt = (data.choices?.[0]?.message?.content || '').trim();
+    const clean = txt.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(clean);
+    } catch (e1) {
+      const m = clean.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Resposta da IA não contém JSON.');
+      parsed = JSON.parse(m[0]);
+    }
+    const tel = (parsed.telefone || '').toString().trim();
+    const origem = parsed.origem || 'outros';
+    if (tel) {
+      const telNum = tel.replace(/\D/g, '');
+      elTel.innerHTML = `<a href="tel:${telNum}" style="color:var(--accent);text-decoration:none">${escapeHtml(tel)}</a>`;
+      elOrigem.textContent = `Origem: ${origem.replace(/_/g, ' ')}`;
+      elOrigem.style.display = '';
+    } else {
+      elTel.textContent = 'Não encontrado na web';
+    }
+  } catch (e) {
+    console.warn('buscarTelefoneWeb:', e);
+    elTel.textContent = '—';
+  }
+}
+
+// Fecha o modal de detalhes (botão X e "Fechar" do rodapé)
+function fecharDetalhes() {
+  $('#detalhesModal').style.display = 'none';
+}
+
+// Liga os handlers do modal
+$('#btnVerDetalhes').addEventListener('click', abrirDetalhes);
+$('#btnFecharDetalhes').addEventListener('click', fecharDetalhes);
+$('#btnFecharDetalhes2').addEventListener('click', fecharDetalhes);
+// Fecha com ESC
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($('#detalhesModal').style.display !== 'none') {
+    fecharDetalhes();
+  } else if ($('#produtoDetalhesModal').style.display !== 'none') {
+    fecharDetalhesProduto();
+  }
+});
+
+// =========================================================
+// VER DETALHES DO PRODUTO (modal de resumo + quebra de objeção por IA)
+// =========================================================
+//
+// Abre o modal #produtoDetalhesModal com o resumo do produto e dispara a
+// geração de 3 argumentos de quebra de objeção via Groq. A geração é
+// personalizada para o cliente atual (última empresa consultada em
+// window._ultimaEmpresa), com cache de 5 minutos por (produtoId, cnpj).
+//
+// O botão "Ver detalhes" é injetado em cada .top5-card em dois pontos
+// (renderTop5 e o re-render dentro de enriquecerComIA). Como usamos
+// innerHTML, re-rodamos o forEach de listeners após cada render via
+// ligarBotoesDetalhesProduto().
+
+const QUEBRAS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+// Event delegation: relink os botões [data-ver-detalhes] que existirem agora.
+// Chamado após cada render do Top 5 (inicial e pós-IA).
+function ligarBotoesDetalhesProduto() {
+  $$('#top5List [data-ver-detalhes]').forEach(b => {
+    // Evita listener duplicado se a função for chamada mais de uma vez
+    // sobre o mesmo botão. Marcamos o elemento como "já ligado".
+    if (b._detalhesListenerOk) return;
+    b._detalhesListenerOk = true;
+    b.addEventListener('click', () => abrirDetalhesProduto(b.dataset.verDetalhes));
+  });
+}
+
+function fecharDetalhesProduto() {
+  $('#produtoDetalhesModal').style.display = 'none';
+}
+
+function abrirDetalhesProduto(produtoId) {
+  const produto = STATE.produtos.find(x => x.id === produtoId);
+  if (!produto) {
+    toast('Produto não encontrado.', 'error');
+    return;
+  }
+  const empresa = window._ultimaEmpresa || null;
+
+  // Cabeçalho
+  $('#detalhesProdMarca').textContent = produto.marca || '—';
+  // Adiciona o badge MAPEX ao lado do nome no cabeçalho do modal (se for MAPEX)
+  const nomeEl = $('#detalhesProdNome');
+  nomeEl.textContent = produto.nome || 'Detalhes do produto';
+  // Limpa badges antigos antes de injetar um novo
+  const oldBadge = nomeEl.parentNode.querySelector('.mapex-badge');
+  if (oldBadge) oldBadge.remove();
+  if (ehMapex(produto)) {
+    const badge = document.createElement('span');
+    badge.className = 'mapex-badge';
+    badge.innerHTML = '<i class="fa-solid fa-star"></i> MAPEX';
+    badge.style.marginLeft = '8px';
+    nomeEl.appendChild(badge);
+  }
+
+  // Resumo do produto
+  $('#detalhesProdNomeField').textContent = produto.nome || '—';
+  $('#detalhesProdMarcaField').textContent = produto.marca || '—';
+  $('#detalhesProdCategoriaField').textContent = produto.categoria || '—';
+  $('#detalhesProdKeywordsField').textContent = produto.keywords || '—';
+  $('#detalhesProdDescricaoField').textContent = produto.descricao || '—';
+  $('#detalhesProdCnaesField').textContent = (produto.cnaes || '').trim()
+    ? produto.cnaes
+    : '— (sem restrição de CNAE)';
+  $('#detalhesProdUfsField').textContent = (produto.ufs || '').trim()
+    ? produto.ufs
+    : 'Todas as UFs';
+
+  // Mostra o modal com spinner; o conteúdo de quebras é populado abaixo.
+  $('#produtoDetalhesModal').style.display = 'flex';
+
+  // Linha informativa do cliente (contexto usado pela IA)
+  const elCliente = $('#detalhesProdClienteInfo');
+  if (empresa) {
+    elCliente.innerHTML = `<i class="fa-solid fa-user-tie"></i> Argumentos personalizados para: <b>${escapeHtml(empresa.razao || '')}</b> — ${escapeHtml(empresa.cnae || '')} ${escapeHtml(empresa.cnaeDesc || '')} • ${escapeHtml(empresa.cidade || '')}/${escapeHtml(empresa.uf || '')}`;
+    elCliente.style.display = '';
+  } else {
+    elCliente.innerHTML = `<i class="fa-solid fa-circle-info"></i> Nenhum cliente consultado nesta sessão — argumentos serão gerados de forma genérica.`;
+    elCliente.style.display = '';
+  }
+
+  // Cache: se o mesmo produto+cliente já foi gerado há menos de 5 min,
+  // re-aproveita o HTML em vez de chamar a IA de novo.
+  const cnpjCliente = empresa?.cnpj || '';
+  const cache = window._produtoDetalhesAtual;
+  const cacheOk = cache
+    && cache.produtoId === produtoId
+    && cache.cnpjCliente === cnpjCliente
+    && (Date.now() - (cache.ts || 0)) < QUEBRAS_CACHE_TTL_MS;
+
+  const elBox = $('#detalhesProdQuebras');
+  const elDica = $('#detalhesProdQuebrasDica');
+  elDica.style.display = 'none';
+
+  if (cacheOk) {
+    elBox.innerHTML = cache.htmlQuebras;
+    return;
+  }
+
+  // Caso contrário, dispara a geração (spinner já está no HTML inicial,
+  // mas regaranto caso o cache tenha sido populado antes com erro).
+  elBox.innerHTML = `<span class="detalhe-loading"><i class="fa-solid fa-circle-notch fa-spin"></i> gerando…</span>`;
+  gerarQuebrasObjecao(produto, empresa);
+}
+
+// Gera 3 quebras de objeção personalizadas via Groq. Espelha o esqueleto
+// de buscarTelefoneWeb(): sem chave → mostra detalhe-hint; com chave →
+// spinner, fetch, parse JSON com fallback, render, cache.
+async function gerarQuebrasObjecao(produto, empresa) {
+  const elBox = $('#detalhesProdQuebras');
+  const elDica = $('#detalhesProdQuebrasDica');
+
+  // (1) Sem chave Groq → fallback visual
+  if (!STATE.config.groq.apiKey) {
+    elBox.innerHTML = `<p class="detalhe-origem">—</p>`;
+    if (elDica) elDica.style.display = '';
+    return;
+  }
+
+  // (2) Monta o prompt com contexto do cliente (se houver) + dados do produto
+  const clienteBloco = empresa
+    ? `CLIENTE ALVO:
+- Razão social: ${empresa.razao}
+- Nome fantasia: ${empresa.nomeFantasia || 'não informado'}
+- Porte: ${empresa.porte}
+- Idade da empresa: ${empresa.idadeAnos ?? '?'} anos (${empresa.faixaIdade})
+- CNAE principal: ${empresa.cnae} — ${empresa.cnaeDesc}
+- Localização: ${empresa.cidade}/${empresa.uf}`
+    : `CLIENTE ALVO: não informado — gere argumentos genéricos, porém ainda úteis para um vendedor brasileiro.`;
+
+  const prompt = `Você é um assistente comercial sênior brasileiro, especialista em argumentação de vendas B2B.
+Sua tarefa: gerar EXATAMENTE 3 argumentos de quebra de objeção para o produto abaixo, considerando o perfil do cliente.
+
+${clienteBloco}
+
+PRODUTO:
+- Nome: ${produto.nome}
+- Marca: ${produto.marca || 'não informada'}
+- Categoria: ${produto.categoria || 'não informada'}
+- Descrição: ${produto.descricao || 'não informada'}
+- Palavras-chave: ${produto.keywords || 'não informadas'}
+
+OBJETIVOS DE OBJEÇÃO A QUEBRAR (escolha os 3 mais relevantes para o perfil do cliente):
+1. PREÇO ("está caro", "não cabe no orçamento")
+2. NECESSIDADE ("não preciso disso agora", "meu fornecedor atual dá conta")
+3. CONFIANÇA / AUTORIDADE ("nunca ouvi falar", "prefiro marca conhecida", "não sei se funciona")
+Outros relevantes podem incluir: prazo de entrega, pós-venda, garantia, complexidade, momento do mercado.
+
+REGRAS:
+- Para cada argumento, devolva: "objeção" (frase curta com a objeção provável do cliente, máx 8 palavras) e "quebra" (1 frase persuasiva em PT-BR, máx 25 palavras, com gancho emocional ou racional que rebata diretamente a objeção).
+- A quebra deve considerar características REAIS do produto (descrição, marca, categoria). NÃO invente especificações.
+- Personalize ao máximo: se o cliente é MEI, use tom acessível; se é empresa consolidada, use tom técnico.
+
+Responda APENAS JSON puro, sem markdown:
+{"argumentos":[
+  {"objeção":"…","quebra":"…"},
+  {"objeção":"…","quebra":"…"},
+  {"objeção":"…","quebra":"…"}
+]}`;
+
+  elBox.innerHTML = `<span class="detalhe-loading"><i class="fa-solid fa-circle-notch fa-spin"></i> gerando 3 argumentos com IA…</span>`;
+  if (elDica) elDica.style.display = 'none';
+
+  try {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.config.groq.apiKey}`
+      },
+      body: JSON.stringify({
+        model: STATE.config.groq.modelo || 'llama-3.1-70b-versatile',
+        messages: [
+          { role: 'system', content: 'Você é um assistente comercial brasileiro. Responda APENAS JSON válido, sem markdown.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.6,
+        max_tokens: 700
+      })
+    });
+    if (!resp.ok) throw new Error(`Groq ${resp.status}: ${(await resp.text()).slice(0, 120)}`);
+    const data = await resp.json();
+    const txt = (data.choices?.[0]?.message?.content || '').trim();
+    // Parse robusto: tira fences ```json, depois tenta JSON.parse com fallback
+    // de regex (mesmo padrão de buscarTelefoneWeb / enriquecerComIA).
+    const clean = txt.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(clean);
+    } catch (e1) {
+      const m = clean.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Resposta da IA não contém JSON.');
+      parsed = JSON.parse(m[0]);
+    }
+    const args = Array.isArray(parsed.argumentos) ? parsed.argumentos : [];
+    if (!args.length) throw new Error('IA devolveu lista vazia de argumentos.');
+
+    // Render dos 3 blocos
+    const html = args.slice(0, 3).map((a, idx) => `
+      <div class="quebra-card" style="margin-bottom:12px;padding:12px 14px;background:var(--surface2);border-radius:10px;border-left:3px solid var(--lima)">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div style="flex:0 0 24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">${idx + 1}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;margin-bottom:4px">
+              <i class="fa-solid fa-comment-dots"></i> ${escapeHtml(a.objeção || a.objecao || 'Objeção')}
+            </div>
+            <div style="font-size:14px;color:var(--text);line-height:1.5">${escapeHtml(a.quebra || '—')}</div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    elBox.innerHTML = html;
+
+    // Cache para re-abrir o mesmo modal sem nova chamada
+    window._produtoDetalhesAtual = {
+      produtoId: produto.id,
+      cnpjCliente: empresa?.cnpj || '',
+      htmlQuebras: html,
+      ts: Date.now()
+    };
+  } catch (e) {
+    console.warn('gerarQuebrasObjecao:', e);
+    elBox.innerHTML = `<p class="detalhe-origem" style="color:var(--red)"><i class="fa-solid fa-triangle-exclamation"></i> Falha: ${escapeHtml(String(e.message).slice(0, 120))}</p>`;
+    toast('Falha ao gerar quebras de objeção: ' + e.message, 'error');
+  }
+}
+
+// Listeners do modal de detalhes do produto
+$('#btnFecharDetalhesProd').addEventListener('click', fecharDetalhesProduto);
+$('#btnFecharDetalhesProd2').addEventListener('click', fecharDetalhesProduto);
+
+
 // A IA aqui deixou de ser só "geradora de texto". Ela é JUIZ e
 // RE-RANKEADOR: recebe os 7 candidatos do algoritmo e devolve os 5
 // finais (pode excluir 1 ou 2 se julgar incompatíveis), com score
@@ -1408,7 +1856,7 @@ Responda APENAS o JSON puro, sem markdown.`;
     finalItens.forEach((it, i) => {
       const p = it.produto;
       const card = document.createElement('div');
-      card.className = 'top5-card';
+      card.className = 'top5-card' + (ehMapex(p) ? ' is-mapex' : '');
       const meta = `<span><b>${p.marca || '—'}</b></span><span>${p.categoria || '—'}</span>`;
       const confHtml = it.confianca
         ? `<div class="confianca-badge conf-${it.confianca}" title="Confiança: ${it.confianca}">${
@@ -1419,7 +1867,7 @@ Responda APENAS o JSON puro, sem markdown.`;
       card.innerHTML = `
         <div class="top5-rank">${i + 1}</div>
         <div class="top5-content">
-          <h4>${p.nome}</h4>
+          <h4>${p.nome}${badgeMapex(p)}</h4>
           <div class="meta">${meta}</div>
           <div class="top5-motivo">
             <i class="fa-solid fa-sparkles" style="color:var(--lima)"></i> ${escapeHtml(it.fraseIA) || (it.motivo.join(' • ') || 'Recomendado pelo algoritmo.')}
@@ -1428,10 +1876,13 @@ Responda APENAS o JSON puro, sem markdown.`;
         <div class="top5-actions">
           <div class="top5-score">${it.score}<small>score</small></div>
           ${confHtml}
+          ${p && p.id ? `<button class="btn-card-action" data-ver-detalhes="${p.id}" type="button" title="Ver resumo e quebras de objeção por IA"><i class="fa-solid fa-eye"></i> Ver detalhes</button>` : ''}
         </div>
       `;
       $('#top5List').appendChild(card);
     });
+    // Re-liga os listeners dos botões "Ver detalhes" após o re-render.
+    ligarBotoesDetalhesProduto();
 
     // Atualiza afinidade geral baseada no score final combinado
     const afin = Math.round(finalItens.reduce((s, r) => s + r.score, 0) / finalItens.length);
@@ -1524,8 +1975,9 @@ function renderProdutos() {
   $('#prodEmpty').style.display = 'none';
   filtrados.forEach(p => {
     const tr = document.createElement('tr');
+    if (ehMapex(p)) tr.classList.add('is-mapex');
     tr.innerHTML = `
-      <td><b>${p.nome}</b></td>
+      <td><b>${p.nome}</b>${badgeMapex(p)}</td>
       <td>${p.marca || '—'}</td>
       <td>${p.categoria || '—'}</td>
       <td>${(p.cnaes || '').split(',').slice(0, 2).join(', ')}${p.cnaes && p.cnaes.split(',').length > 2 ? '…' : ''}</td>
@@ -1571,6 +2023,9 @@ function abrirModalProduto(prod = null) {
   $('#prodCnaes').value = prod?.cnaes || '';
   $('#prodUfs').value = prod?.ufs || '';
   $('#prodKeywords').value = prod?.keywords || '';
+  // Marca/desmarca checkbox MAPEX (também detecta se a marca contém MAPEX,
+  // para que produtos antigos, cadastrados sem essa flag, apareçam pré-marcados)
+  $('#prodMapex').checked = !!ehMapex(prod || {});
   $('#produtoModal').style.display = 'flex';
 }
 
@@ -1588,7 +2043,10 @@ $('#produtoForm').addEventListener('submit', (e) => {
     descricao: $('#prodDescricao').value.trim(),
     cnaes: $('#prodCnaes').value.trim(),
     ufs: $('#prodUfs').value.trim().toUpperCase(),
-    keywords: $('#prodKeywords').value.trim()
+    keywords: $('#prodKeywords').value.trim(),
+    // Flag MAPEX: persistimos separadamente para garantir o badge mesmo
+    // se a marca não contiver "MAPEX" (ex: o usuário quer marcar manualmente)
+    mapex: $('#prodMapex').checked
   };
   const idx = STATE.produtos.findIndex(x => x.id === p.id);
   if (idx >= 0) STATE.produtos[idx] = p; else STATE.produtos.push(p);
@@ -1747,6 +2205,19 @@ $('#btnLimparTudo').addEventListener('click', async () => {
   localStorage.removeItem(STORAGE_KEYS.produtos);
   localStorage.removeItem(STORAGE_KEYS.users);
   STATE.produtos = window.PRODUTOS_SEED.map(p => ({ ...p, id: getId() }));
+  // Adiciona produtos do catálogo ARCOM (Higiene e Beleza)
+  if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
+    const arcom = window.PRODUTOS_ARCOM_SEED.map(p => ({
+      ...p,
+      id: getId(),
+      nome: (p.nome || '').toString(),
+      marca: (p.marca || '').toString(),
+      categoria: p.categoria || 'Higiene e Beleza',
+      mapex: p.mapex === true
+    }));
+    const chaves = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
+    STATE.produtos = STATE.produtos.concat(arcom.filter(p => !chaves.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase())));
+  }
   STATE.historico = [];
   STATE.config.pesos = { cnae: 50, regiao: 30, prioridade: 10, keywords: 10 };
   // Não apaga firebase config
@@ -2406,6 +2877,22 @@ $('#btnExportar').addEventListener('click', async () => {
   // Inicializa seed de produtos se for primeira vez (só local)
   if (!STATE.produtos || !STATE.produtos.length) {
     STATE.produtos = window.PRODUTOS_SEED.map(p => ({ ...p, id: getId() }));
+    // Adiciona produtos do catálogo ARCOM (Higiene e Beleza), se disponível
+    if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
+      const arcom = window.PRODUTOS_ARCOM_SEED.map(p => ({
+        ...p,
+        id: getId(),
+        // Normaliza nome/marca vindos do seed para garantir busca funciona
+        nome: (p.nome || '').toString(),
+        marca: (p.marca || '').toString(),
+        categoria: p.categoria || 'Higiene e Beleza',
+        mapex: p.mapex === true
+      }));
+      // Evita duplicar se a lista já estiver parcialmente populada
+      const chavesExistentes = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
+      const novos = arcom.filter(p => !chavesExistentes.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
+      STATE.produtos = STATE.produtos.concat(novos);
+    }
     salvarLocal();
   }
 

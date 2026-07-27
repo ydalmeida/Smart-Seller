@@ -202,6 +202,9 @@
                   <small>afinidade</small>
                 </div>
                 <div class="score-legend">Compatibilidade geral com seu catálogo</div>
+                <button class="btn-ghost btn-detalhes" id="btnVerDetalhes" type="button" style="margin-top:12px">
+                  <i class="fa-solid fa-eye"></i> Ver detalhes
+                </button>
               </div>
             </div>
           </div>
@@ -395,6 +398,16 @@
           <label class="field"><span>UFs compatíveis (separar por vírgula, vazio = todas)</span><input id="prodUfs" placeholder="SP, RJ, MG"></label>
         </div>
         <label class="field"><span>Palavras-chave (separar por vírgula)</span><input id="prodKeywords" placeholder="cimento, argamassa, construção"></label>
+        <label class="field field-mapex">
+          <span style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="prodMapex" style="width:auto;height:auto;margin:0">
+            <span style="display:inline-flex;align-items:center;gap:6px">
+              <span class="mapex-badge" style="margin:0"><i class="fa-solid fa-star"></i> MAPEX</span>
+              <span style="font-weight:500">Marcar como produto MAPEX</span>
+            </span>
+          </span>
+          <small style="color:var(--muted);font-size:11px;margin-top:2px">Produtos MAPEX recebem um selo dourado e destaque visual no catálogo e no Top 5.</small>
+        </label>
         <div class="row-actions">
           <button type="button" class="btn-ghost" id="btnCancelarModal">Cancelar</button>
           <button type="submit" class="btn-primary"><i class="fa-solid fa-save"></i> Salvar</button>
@@ -443,7 +456,110 @@
   <!-- ============== TOASTS ============== -->
   <div id="toastBox" class="toast-box"></div>
 
+  <!-- ============== MODAL: VER DETALHES (CNPJ) ============== -->
+  <!-- Abre ao clicar em "Ver detalhes" no card da empresa. Mostra os dados
+       completos da Receita Federal (via BrasilAPI) e tenta achar um telefone
+       adicional na web (via Groq, se houver chave configurada). -->
+  <div class="modal-overlay" id="detalhesModal" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <div>
+          <p class="modal-head-cnpj" id="detalheCnpjLabel" style="font-family:var(--mono);font-size:12px;color:var(--muted)">—</p>
+          <h3 id="detalheRazaoLabel">Detalhes da empresa</h3>
+        </div>
+        <button class="modal-close" id="btnFecharDetalhes" type="button" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-section">
+          <div class="modal-section-title"><i class="fa-solid fa-building"></i> Informações básicas</div>
+          <div class="detalhes-grid">
+            <div class="detalhe-field"><label>Nome fantasia</label><p id="detalheNomeFantasia">—</p></div>
+            <div class="detalhe-field"><label>Situação</label><p id="detalheSituacao">—</p></div>
+            <div class="detalhe-field"><label>Porte</label><p id="detalhePorte">—</p></div>
+            <div class="detalhe-field"><label>Natureza jurídica</label><p id="detalheNatureza">—</p></div>
+            <div class="detalhe-field"><label>Data de abertura</label><p id="detalheAbertura">—</p></div>
+            <div class="detalhe-field"><label>Capital social</label><p id="detalheCapital">—</p></div>
+            <div class="detalhe-field" style="grid-column:1/-1"><label>Endereço</label><p id="detalheEndereco">—</p></div>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-title"><i class="fa-solid fa-phone"></i> Contato</div>
+          <div class="detalhes-grid">
+            <div class="detalhe-field">
+              <label><i class="fa-solid fa-receipt"></i> Telefone (Receita Federal)</label>
+              <p id="detalheTelReceita">—</p>
+            </div>
+            <div class="detalhe-field">
+              <label><i class="fa-solid fa-globe"></i> Telefone (achado na web)</label>
+              <p id="detalheTelWeb">
+                <span class="detalhe-loading"><i class="fa-solid fa-circle-notch fa-spin"></i> buscando…</span>
+              </p>
+              <small class="detalhe-origem" id="detalheTelWebOrigem" style="display:none"></small>
+            </div>
+          </div>
+          <p class="detalhe-hint" id="detalheTelWebDica" style="display:none">
+            <i class="fa-solid fa-circle-info"></i>
+            Configure a chave Groq em <b>Configurações → IA</b> para que a busca na web seja feita automaticamente.
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer-row" style="display:flex;justify-content:flex-end;gap:8px;padding:14px 24px;border-top:1px solid var(--border)">
+        <button class="btn-ghost" id="btnFecharDetalhes2" type="button">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== MODAL: VER DETALHES DO PRODUTO ============== -->
+  <!-- Abre ao clicar em "Ver detalhes" em um card do Top 5. Mostra um resumo
+       do produto (dados cadastrados) e gera 3 argumentos de quebra de objeção
+       personalizados para o cliente atual (última empresa consultada) usando
+       a chave Groq configurada em Configurações → IA. -->
+  <div class="modal-overlay" id="produtoDetalhesModal" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <div>
+          <p class="modal-head-cnpj" id="detalhesProdMarca">—</p>
+          <h3 id="detalhesProdNome">Detalhes do produto</h3>
+        </div>
+        <button class="modal-close" id="btnFecharDetalhesProd" type="button" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <!-- Seção 1: resumo do produto -->
+        <div class="modal-section">
+          <div class="modal-section-title"><i class="fa-solid fa-box-open"></i> Resumo do produto</div>
+          <div class="detalhes-grid">
+            <div class="detalhe-field"><label>Nome</label><p id="detalhesProdNomeField">—</p></div>
+            <div class="detalhe-field"><label>Marca</label><p id="detalhesProdMarcaField">—</p></div>
+            <div class="detalhe-field"><label>Categoria</label><p id="detalhesProdCategoriaField">—</p></div>
+            <div class="detalhe-field"><label>Palavras-chave</label><p id="detalhesProdKeywordsField">—</p></div>
+            <div class="detalhe-field" style="grid-column:1/-1"><label>Descrição</label><p id="detalhesProdDescricaoField">—</p></div>
+            <div class="detalhe-field"><label>CNAEs compatíveis</label><p id="detalhesProdCnaesField">—</p></div>
+            <div class="detalhe-field"><label>UFs compatíveis</label><p id="detalhesProdUfsField">—</p></div>
+          </div>
+        </div>
+
+        <!-- Seção 2: quebra de objeções via IA -->
+        <div class="modal-section">
+          <div class="modal-section-title"><i class="fa-solid fa-comments"></i> Quebra de objeções (IA)</div>
+          <div id="detalhesProdQuebras">
+            <span class="detalhe-loading"><i class="fa-solid fa-circle-notch fa-spin"></i> gerando…</span>
+          </div>
+          <p class="detalhe-hint" id="detalhesProdQuebrasDica" style="display:none">
+            <i class="fa-solid fa-circle-info"></i>
+            Configure a chave Groq em <b>Configurações → IA</b> para gerar argumentos de quebra de objeção personalizados para este cliente.
+          </p>
+          <p class="detalhe-origem" id="detalhesProdClienteInfo" style="display:none;margin-top:8px"></p>
+        </div>
+      </div>
+      <div class="modal-footer-row" style="display:flex;justify-content:flex-end;gap:8px;padding:14px 24px;border-top:1px solid var(--border)">
+        <button class="btn-ghost" id="btnFecharDetalhesProd2" type="button">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="produtos-seed.js"></script>
+  <script src="produtos-arcom-seed.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

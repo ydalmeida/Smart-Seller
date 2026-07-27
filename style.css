@@ -533,6 +533,24 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 [data-theme="dark"] .confianca-badge.conf-media { background: rgba(234,179,8,.18);  color: #FACC15; border-color: rgba(234,179,8,.40); }
 [data-theme="dark"] .confianca-badge.conf-baixa { background: rgba(248,113,113,.14);color: #FCA5A5; border-color: rgba(248,113,113,.35); }
 
+/* Botão "Ver detalhes" dentro de cada card do Top 5.
+   Compacto no desktop; ocupa linha inteira no mobile (≤600px). */
+.btn-card-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border-lit);
+  background: var(--surface); color: var(--muted);
+  border-radius: 8px; cursor: pointer;
+  transition: all .15s ease;
+  margin-top: 2px;
+  font-family: inherit;
+}
+.btn-card-action:hover { color: var(--accent); border-color: var(--accent); background: var(--surface2); }
+.btn-card-action i { font-size: 11px; }
+@media (max-width: 600px) {
+  .btn-card-action { width: 100%; justify-content: center; }
+}
+
 /* Aviso de "match por similaridade" — quando nenhum produto tem match
    direto com o CNAE do cliente. */
 .aviso-similaridade {
@@ -555,6 +573,82 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 .aviso-similaridade i { font-size: 16px; flex-shrink: 0; }
 
 @media (max-width: 600px) { .top5-card { grid-template-columns: 48px 1fr; } .top5-actions { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; width: 100%; padding-top: 8px; border-top: 1px dashed var(--border); } }
+
+/* ============================================================
+   BADGE MAPEX
+   Selo visual para produtos MAPEX — diferencia claramente dos demais
+   produtos no catálogo (tabela) e no Top 5.
+   ============================================================ */
+
+/* Badge inline (ao lado do nome do produto) */
+.mapex-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  vertical-align: middle;
+  background: linear-gradient(135deg, #B8860B, #FFD700);
+  color: #1a1a1a;
+  border: 1px solid #8B6914;
+  box-shadow: 0 1px 4px rgba(184,134,11,.4);
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.mapex-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(184,134,11,.55);
+}
+.mapex-badge i {
+  font-size: 9px;
+  color: #1a1a1a;
+}
+[data-theme="dark"] .mapex-badge {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #1a1a1a;
+  border-color: #B8860B;
+}
+
+/* Cor de destaque no nome do produto (no Top 5) */
+.mapex-destacado {
+  background: linear-gradient(90deg, rgba(184,134,11,.12), transparent 70%);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+/* Borda esquerda dourada no card do Top 5 quando é MAPEX */
+.top5-card.is-mapex::before {
+  background: linear-gradient(180deg, #FFD700, #B8860B) !important;
+  width: 6px !important;
+  box-shadow: 0 0 8px rgba(255,215,0,.5);
+}
+.top5-card.is-mapex {
+  border-color: rgba(184,134,11,.45) !important;
+  background: linear-gradient(135deg, rgba(255,215,0,.04), var(--surface) 60%) !important;
+}
+.top5-card.is-mapex .top5-rank {
+  background: linear-gradient(135deg, #FFD700, #B8860B) !important;
+  color: #1a1a1a !important;
+  box-shadow: 0 0 12px rgba(255,215,0,.4);
+}
+
+/* Linha destacada na tabela de produtos */
+tr.is-mapex td {
+  background: linear-gradient(90deg, rgba(255,215,0,.10), rgba(255,215,0,.02) 60%, transparent) !important;
+}
+tr.is-mapex:hover td {
+  background: linear-gradient(90deg, rgba(255,215,0,.18), rgba(255,215,0,.05) 60%, transparent) !important;
+}
+tr.is-mapex td:first-child {
+  border-left: 3px solid #B8860B;
+}
 
 /* ============================================================
    TABELAS
@@ -595,6 +689,73 @@ input[readonly] { background: var(--surface2) !important; color: var(--muted) !i
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 1; }
 .modal-head h3 { font-size: 17px; }
 .modal-body { padding: 24px; }
+
+/* ============================================================
+   MODAL: VER DETALHES (CNPJ)
+   ============================================================ */
+.modal-close {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  transition: all .2s;
+}
+.modal-close:hover { color: var(--text); border-color: var(--border-lit); }
+.modal-head-cnpj { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.modal-section { margin-bottom: 22px; }
+.modal-section:last-child { margin-bottom: 0; }
+.modal-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--accent);
+  margin-bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.detalhes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+}
+@media (max-width: 560px) { .detalhes-grid { grid-template-columns: 1fr; } }
+.detalhe-field { display: flex; flex-direction: column; gap: 4px; }
+.detalhe-field label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.detalhe-field p {
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-word;
+}
+.detalhe-loading { color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.detalhe-origem { color: var(--muted); font-size: 11px; display: block; margin-top: 4px; }
+.detalhe-hint {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(180,83,9,.08);
+  border: 1px solid rgba(180,83,9,.25);
+  border-radius: 8px;
+  color: var(--yellow, #B45309);
+  font-size: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.btn-detalhes {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
 
 /* ============================================================
    TOASTS
