@@ -32,19 +32,28 @@ const ADMIN_SENHA_ENC = 'EkEPXx0GYwFa';
 const ADMIN_EMAIL = _decodeAdmin(ADMIN_EMAIL_ENC);
 const ADMIN_SENHA = _decodeAdmin(ADMIN_SENHA_ENC);
 
-// Config do Firebase deste projeto (smart-seller-19037), fixa no código.
-// Diferente de uma chave de API secreta, a config do Firebase Web é pública
-// por natureza (ela viaja no bundle do site) — quem protege os dados de
-// verdade são as Firestore Rules, não o sigilo destes valores. Por isso ela
-// fica aqui como padrão, e a tela de Configurações → Firebase pode
-// sobrescrevê-la caso um dia o projeto mude.
+// Config do Firebase deste projeto (smart-seller-19037), fixa no código —
+// camuflada com o mesmo esquema (Base64 + XOR) usado nas credenciais do
+// admin logo acima, em vez de aparecer em texto puro no source.
+// Vale o mesmo aviso: isso NÃO é segurança de verdade (é reversível via
+// F12 → Console, chamando _decodeAdmin() nos valores abaixo). A config do
+// Firebase Web é pública por natureza — quem protege os dados de verdade
+// são as Firestore Rules. Isso só evita que um grep rápido no source
+// revele o projeto em texto puro. A tela de Configurações → Firebase
+// continua podendo sobrescrever isso caso um dia o projeto mude.
+const FB_APIKEY_ENC   = 'EnoWUSNNEAcPQSZGEkIOdQZeB3wWYxRnGFQGRAoNN0YNSDpxKgsp';
+const FB_AUTHDOM_ENC   = 'IF4NQgQZIFYAXBVGfgJVAEMDfVUFQhVWMkAJUQBEfVADXQ==';
+const FB_PROJID_ENC   = 'IF4NQgQZIFYAXBVGfgJVAEMD';
+const FB_BUCKET_ENC   = 'IF4NQgQZIFYAXBVGfgJVAEMDfVUFQhVWMkAJQwRbIVILVV5VI0M=';
+const FB_SENDERID_ENC = 'awFdAEQCYgNcA0gH';
+const FB_APPID_ENC     = 'YglUAkEEZwVdAEAHawBWRxVWaVcJBUUEZwteVEQEYVIJUkZRNVUIURE=';
 const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyC4cqVrAqbEvjTOzSdSKgjtz9duaxJEy8E",
-  authDomain: "smart-seller-19037.firebaseapp.com",
-  projectId: "smart-seller-19037",
-  storageBucket: "smart-seller-19037.firebasestorage.app",
-  messagingSenderId: "821046100383",
-  appId: "1:821046100383:web:de550482d402aeb6effdaa"
+  apiKey: _decodeAdmin(FB_APIKEY_ENC),
+  authDomain: _decodeAdmin(FB_AUTHDOM_ENC),
+  projectId: _decodeAdmin(FB_PROJID_ENC),
+  storageBucket: _decodeAdmin(FB_BUCKET_ENC),
+  messagingSenderId: _decodeAdmin(FB_SENDERID_ENC),
+  appId: _decodeAdmin(FB_APPID_ENC)
 };
 
 const STATE = {
