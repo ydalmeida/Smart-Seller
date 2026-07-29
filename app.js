@@ -32,22 +32,31 @@ const ADMIN_SENHA_ENC = 'EkEPXx0GYwFa';
 const ADMIN_EMAIL = _decodeAdmin(ADMIN_EMAIL_ENC);
 const ADMIN_SENHA = _decodeAdmin(ADMIN_SENHA_ENC);
 
+// Config do Firebase deste projeto (smart-seller-19037), fixa no código.
+// Diferente de uma chave de API secreta, a config do Firebase Web é pública
+// por natureza (ela viaja no bundle do site) — quem protege os dados de
+// verdade são as Firestore Rules, não o sigilo destes valores. Por isso ela
+// fica aqui como padrão, e a tela de Configurações → Firebase pode
+// sobrescrevê-la caso um dia o projeto mude.
+const DEFAULT_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyC4cqVrAqbEvjTOzSdSKgjtz9duaxJEy8E",
+  authDomain: "smart-seller-19037.firebaseapp.com",
+  projectId: "smart-seller-19037",
+  storageBucket: "smart-seller-19037.firebasestorage.app",
+  messagingSenderId: "821046100383",
+  appId: "1:821046100383:web:de550482d402aeb6effdaa"
+};
+
 const STATE = {
   user: null,        // {email, uid, role: 'admin' | 'consultor'}
   produtos: [],
   historico: [],
   config: {
-    // Firebase — deixe vazio para usar o modo local (login funciona 100% sem Firebase).
-    // Quando criar o projeto no console.firebase.google.com, cole as credenciais em
-    // Configurações → Firebase, e o login real + sync entre dispositivos passam a funcionar.
-    firebase: {
-      apiKey: "",
-      authDomain: "",
-      projectId: "",
-      storageBucket: "",
-      messagingSenderId: "",
-      appId: ""
-    },
+    // Firebase — já vem preenchido com o projeto smart-seller-19037 (login real
+    // + sync entre dispositivos funcionam direto, sem precisar configurar nada).
+    // Se um dia trocar de projeto, cole as novas credenciais em
+    // Configurações → Firebase, ou edite DEFAULT_FIREBASE_CONFIG acima.
+    firebase: { ...DEFAULT_FIREBASE_CONFIG },
     groq: { apiKey: '', modelo: 'llama-3.1-70b-versatile' },
     pesos: { cnae: 50, regiao: 30, prioridade: 10, keywords: 10 }
   }
@@ -131,7 +140,15 @@ function salvarLocal() {
 function carregarLocal() {
   try {
     const cfg = localStorage.getItem(STORAGE_KEYS.config);
-    if (cfg) Object.assign(STATE.config, JSON.parse(cfg));
+    if (cfg) {
+      const parsed = JSON.parse(cfg);
+      Object.assign(STATE.config, parsed);
+      // Se o navegador tinha uma config de Firebase antiga/vazia salva (de antes
+      // deste projeto ter uma config padrão), ela não deve apagar o padrão válido.
+      if (!firebaseConfigValida(STATE.config.firebase) && firebaseConfigValida(DEFAULT_FIREBASE_CONFIG)) {
+        STATE.config.firebase = { ...DEFAULT_FIREBASE_CONFIG };
+      }
+    }
     const prods = localStorage.getItem(STORAGE_KEYS.produtos);
     if (prods) STATE.produtos = JSON.parse(prods);
     // Migração única do histórico legado (chave global) para a chave do admin local,
@@ -3118,10 +3135,7 @@ $('#btnExportar').addEventListener('click', async () => {
   // Garante que a config do Firebase existe como objeto (proteção contra
   // estado corrompido no localStorage de versões antigas do app).
   if (!STATE.config.firebase || typeof STATE.config.firebase !== 'object') {
-    STATE.config.firebase = {
-      apiKey: "", authDomain: "", projectId: "",
-      storageBucket: "", messagingSenderId: "", appId: ""
-    };
+    STATE.config.firebase = { ...DEFAULT_FIREBASE_CONFIG };
   }
 
   // Inicializa seed de produtos se for primeira vez (só local)
