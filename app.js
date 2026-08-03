@@ -2481,19 +2481,11 @@ $('#btnLimparTudo').addEventListener('click', async () => {
   localStorage.removeItem(STORAGE_KEYS.produtos);
   localStorage.removeItem(STORAGE_KEYS.users);
   STATE.produtos = window.PRODUTOS_SEED.map(p => ({ ...p, id: getId() }));
-  // Adiciona produtos do catálogo ARCOM (Higiene e Beleza)
-  if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
-    const arcom = window.PRODUTOS_ARCOM_SEED.map(p => ({
-      ...p,
-      id: getId(),
-      nome: (p.nome || '').toString(),
-      marca: (p.marca || '').toString(),
-      categoria: p.categoria || 'Higiene e Beleza',
-      mapex: p.mapex === true
-    }));
-    const chaves = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
-    STATE.produtos = STATE.produtos.concat(arcom.filter(p => !chaves.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase())));
-  }
+  // Adiciona produtos dos catálogos ARCOM (Higiene e Beleza, Material Escolar,
+  // Produtos Alimenticios). A função mesclarSeedArcom é idempotente.
+  mesclarSeedArcom(window.PRODUTOS_ARCOM_SEED, 'Higiene e Beleza');
+  mesclarSeedArcom(window.PRODUTOS_ARCOM_ESCOLAR_SEED, 'Material Escolar');
+  mesclarSeedArcom(window.PRODUTOS_ARCOM_ALIMENTICIOS_SEED, 'Produtos Alimenticios');
   STATE.historico = [];
   STATE.config.pesos = { cnae: 50, regiao: 30, prioridade: 10, keywords: 10 };
   // Não apaga firebase config
@@ -3137,6 +3129,31 @@ $('#btnExportar').addEventListener('click', async () => {
 // =========================================================
 // BOOT
 // =========================================================
+
+// Helper idempotente: mescla produtos de um seed ARCOM no STATE.produtos,
+// evitando duplicatas pela chave (nome + marca). É seguro chamar várias
+// vezes — só adiciona produtos que ainda não existem.
+function mesclarSeedArcom(seedArray, categoriaPadrao) {
+  if (!Array.isArray(seedArray) || !seedArray.length) return;
+  const chavesExistentes = new Set(
+    STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase())
+  );
+  const novos = seedArray
+    .filter(p => !chavesExistentes.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()))
+    .map(p => ({
+      ...p,
+      id: getId(),
+      nome: (p.nome || '').toString(),
+      marca: (p.marca || '').toString(),
+      categoria: p.categoria || categoriaPadrao,
+      mapex: p.mapex === true
+    }));
+  if (novos.length) {
+    STATE.produtos = STATE.produtos.concat(novos);
+    salvarLocal();
+  }
+}
+
 (async function boot() {
   initTema();
   carregarLocal();
@@ -3153,24 +3170,12 @@ $('#btnExportar').addEventListener('click', async () => {
     salvarLocal();
   }
 
-  // Mescla produtos do catálogo ARCOM (Higiene e Beleza) sempre que o seed estiver disponível.
+  // Mescla produtos do catálogo ARCOM (Higiene e Beleza, Material Escolar,
+  // Produtos Alimenticios) sempre que os seeds estiverem disponíveis.
   // É idempotente: só adiciona produtos que ainda não existem na lista.
-  if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
-    const arcom = window.PRODUTOS_ARCOM_SEED.map(p => ({
-      ...p,
-      id: getId(),
-      nome: (p.nome || '').toString(),
-      marca: (p.marca || '').toString(),
-      categoria: p.categoria || 'Higiene e Beleza',
-      mapex: p.mapex === true
-    }));
-    const chavesExistentes = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
-    const novos = arcom.filter(p => !chavesExistentes.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
-    if (novos.length) {
-      STATE.produtos = STATE.produtos.concat(novos);
-      salvarLocal();
-    }
-  }
+  mesclarSeedArcom(window.PRODUTOS_ARCOM_SEED, 'Higiene e Beleza');
+  mesclarSeedArcom(window.PRODUTOS_ARCOM_ESCOLAR_SEED, 'Material Escolar');
+  mesclarSeedArcom(window.PRODUTOS_ARCOM_ALIMENTICIOS_SEED, 'Produtos Alimenticios');
 
   // Tenta conectar Firebase automaticamente (só se a config for válida e real)
   if (firebaseConfigValida(STATE.config.firebase)) {
@@ -3197,25 +3202,16 @@ $('#btnExportar').addEventListener('click', async () => {
           STATE.user = { email: user.email, uid: user.uid, role };
           // Carrega dados do Firestore (se conseguir)
           await carregarDoFirestore();
-          // Re-mescla ARCOM após carregar do Firestore (Firestore pode ter sobrescrito a lista local)
-          if (Array.isArray(window.PRODUTOS_ARCOM_SEED) && window.PRODUTOS_ARCOM_SEED.length) {
-            const chaves = new Set(STATE.produtos.map(p => ((p.nome || '') + '|' + (p.marca || '')).toLowerCase()));
-            const arcom = window.PRODUTOS_ARCOM_SEED
-              .filter(p => !chaves.has(((p.nome || '') + '|' + (p.marca || '')).toLowerCase()))
-              .map(p => ({
-                ...p,
-                id: getId(),
-                nome: (p.nome || '').toString(),
-                marca: (p.marca || '').toString(),
-                categoria: p.categoria || 'Higiene e Beleza',
-                mapex: p.mapex === true
-              }));
-            if (arcom.length) {
-              STATE.produtos = STATE.produtos.concat(arcom);
-              // Persiste no Firestore para futuras sessões
-              if (firebaseDb) await salvarNoFirestore();
-              salvarLocal();
-            }
+          // Re-mescla ARCOM após carregar do Firestore (Firestore pode ter
+          // sobrescrito a lista local). A função mesclarSeedArcom é idempotente.
+          const tamanhoAntes = STATE.produtos.length;
+          mesclarSeedArcom(window.PRODUTOS_ARCOM_SEED, 'Higiene e Beleza');
+          mesclarSeedArcom(window.PRODUTOS_ARCOM_ESCOLAR_SEED, 'Material Escolar');
+          mesclarSeedArcom(window.PRODUTOS_ARCOM_ALIMENTICIOS_SEED, 'Produtos Alimenticios');
+          if (STATE.produtos.length > tamanhoAntes) {
+            // Persiste no Firestore para futuras sessões
+            if (firebaseDb) await salvarNoFirestore();
+            salvarLocal();
           }
           mostrarApp();
         } else {
