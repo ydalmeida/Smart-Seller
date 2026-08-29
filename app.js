@@ -47,6 +47,7 @@ const FB_PROJID_ENC   = 'IF4NQgQZIFYAXBVGfgJVAEMD';
 const FB_BUCKET_ENC   = 'IF4NQgQZIFYAXBVGfgJVAEMDfVUFQhVWMkAJQwRbIVILVV5VI0M=';
 const FB_SENDERID_ENC = 'awFdAEQCYgNcA0gH';
 const FB_APPID_ENC     = 'YglUAkEEZwVdAEAHawBWRxVWaVcJBUUEZwteVEQEYVIJUkZRNVUIURE=';
+const GROQ_APIKEY_ENC    = 'NEAHbyV6IH9bByF6ZmcgaCNEAkEtexcNBHQISRIHFWoLZQFFIXcAZx5VCgcBZEJZZXEeQQdkJXA=';
 const DEFAULT_FIREBASE_CONFIG = {
   apiKey: _decodeAdmin(FB_APIKEY_ENC),
   authDomain: _decodeAdmin(FB_AUTHDOM_ENC),
@@ -66,7 +67,7 @@ const STATE = {
     // Se um dia trocar de projeto, cole as novas credenciais em
     // Configurações → Firebase, ou edite DEFAULT_FIREBASE_CONFIG acima.
     firebase: { ...DEFAULT_FIREBASE_CONFIG },
-    groq: { apiKey: '', modelo: 'llama-3.1-70b-versatile' },
+    groq: { apiKey: _decodeAdmin(GROQ_APIKEY_ENC), modelo: 'llama-3.1-70b-versatile' },
     pesos: { cnae: 50, regiao: 30, prioridade: 10, keywords: 10 }
   }
 };
@@ -1140,13 +1141,13 @@ function tipoDoProduto(produto) {
 // Diversifica a lista: pega itens na ordem, mas pula itens cujo "tipo"
 // já apareceu. Mantém até `limite` itens (ou menos se não houver tipos
 // distintos suficientes).
-function diversificarPorTipo(resultados, limite) {
+function diversificarPorMarca(resultados, limite) {
   const escolhidos = [];
-  const tiposVistos = new Set();
+  const marcasVistas = new Set();
   for (const r of resultados) {
-    const tipo = tipoDoProduto(r.produto);
-    if (tiposVistos.has(tipo)) continue;
-    tiposVistos.add(tipo);
+    const marca = (r.produto?.marca || 'sem-marca').toLowerCase();
+    if (marcasVistas.has(marca)) continue;
+    marcasVistas.add(marca);
     escolhidos.push(r);
     if (escolhidos.length >= limite) break;
   }
@@ -1317,13 +1318,11 @@ function calcularTop5(empresa) {
   const resultadosMapex = resultados.filter(r => r.produto && r.produto.mapex === true);
   const resultadosSemMapex = resultados.filter(r => !r.produto || r.produto.mapex !== true);
 
-  // Diversifica por "tipo de produto" (primeira palavra significativa)
-  // - top7 de cada grupo: até 7 tipos distintos (pool pra IA)
-  // - top5 de cada grupo: até 5 tipos distintos (mostrado ao usuário)
-  const top7Mapex = diversificarPorTipo(resultadosMapex, 7);
-  const top5Mapex = diversificarPorTipo(resultadosMapex, 5);
-  const top7SemMapex = diversificarPorTipo(resultadosSemMapex, 7);
-  const top5SemMapex = diversificarPorTipo(resultadosSemMapex, 5);
+  // Diversifica por marca (apenas 1 produto por marca)
+  const top7Mapex = diversificarPorMarca(resultadosMapex, 7);
+  const top5Mapex = diversificarPorMarca(resultadosMapex, 5);
+  const top7SemMapex = diversificarPorMarca(resultadosSemMapex, 7);
+  const top5SemMapex = diversificarPorMarca(resultadosSemMapex, 5);
 
   // Pool enviado pra IA: separado por MAPEX (até 7 cada) para chamada paralela
   const top7 = {
@@ -1457,7 +1456,10 @@ function renderListaTop5(itens, list, opcoes) {
       <div class="top5-actions">
         <div class="top5-score">${it.score}<small>score</small></div>
         ${confHtml}
-        ${p && p.id ? `<button class="btn-card-action" data-ver-detalhes="${p.id}" type="button" title="Ver resumo e quebras de objeção por IA"><i class="fa-solid fa-eye"></i> Ver detalhes</button>` : ''}
+        ${p && p.id ? `
+            <button class="btn-card-action" data-ver-detalhes="${p.id}" type="button" title="Ver resumo e quebras de objeção por IA"><i class="fa-solid fa-eye"></i> Detalhes</button>
+            <button class="btn-card-action" data-ver-similares="${p.id}" type="button" title="Ver produtos similares"><i class="fa-solid fa-shuffle"></i> Similares</button>
+          ` : ''}
       </div>
     `;
     list.appendChild(card);
@@ -1637,10 +1639,14 @@ function fecharDetalhes() {
 $('#btnVerDetalhes').addEventListener('click', abrirDetalhes);
 $('#btnFecharDetalhes').addEventListener('click', fecharDetalhes);
 $('#btnFecharDetalhes2').addEventListener('click', fecharDetalhes);
+$('#btnFecharSimilares').addEventListener('click', fecharSimilares);
+$('#btnFecharSimilares2').addEventListener('click', fecharSimilares);
 // Fecha com ESC
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if ($('#detalhesModal').style.display !== 'none') {
+  if ($('#similaresModal').style.display !== 'none') {
+    fecharSimilares();
+  } else if ($('#detalhesModal').style.display !== 'none') {
     fecharDetalhes();
   } else if ($('#produtoDetalhesModal').style.display !== 'none') {
     fecharDetalhesProduto();
@@ -1669,18 +1675,87 @@ function ligarBotoesDetalhesProduto() {
   // Suporta tanto o container antigo (#top5List) quanto os novos (#top5ListMapex, #top5ListSemMapex)
   const containers = ['#top5List', '#top5ListMapex', '#top5ListSemMapex'].map(sel => $(sel)).filter(Boolean);
   containers.forEach(container => {
+    // Botões de Detalhes
     container.querySelectorAll('[data-ver-detalhes]').forEach(b => {
-      // Evita listener duplicado se a função for chamada mais de uma vez
-      // sobre o mesmo botão. Marcamos o elemento como "já ligado".
       if (b._detalhesListenerOk) return;
       b._detalhesListenerOk = true;
       b.addEventListener('click', () => abrirDetalhesProduto(b.dataset.verDetalhes));
+    });
+    // Botões de Similares
+    container.querySelectorAll('[data-ver-similares]').forEach(b => {
+      if (b._similaresListenerOk) return;
+      b._similaresListenerOk = true;
+      b.addEventListener('click', () => abrirSimilares(b.dataset.verSimilares));
     });
   });
 }
 
 function fecharDetalhesProduto() {
   $('#produtoDetalhesModal').style.display = 'none';
+}
+
+function fecharSimilares() {
+  $('#similaresModal').style.display = 'none';
+}
+
+async function abrirSimilares(produtoId) {
+  const produto = STATE.produtos.find(x => x.id === produtoId);
+  if (!produto) {
+    toast('Produto não encontrado.', 'error');
+    return;
+  }
+
+  $('#similaresProdMarca').textContent = produto.marca || '—';
+  $('#similaresProdNome').textContent = `Similares a: ${produto.nome}`;
+  $('#similaresModal').style.display = 'flex';
+
+  const similares = STATE.produtos.filter(p => {
+    if (p.id === produtoId) return false;
+    // Similar por categoria
+    const mesmaCat = p.categoria && p.categoria === produto.categoria;
+    // Similar por keywords (pelo menos uma em comum)
+    const kws1 = (produto.keywords || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+    const kws2 = (p.keywords || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+    const temKwComum = kws1.some(k => kws2.includes(k));
+
+    return mesmaCat || temKwComum;
+  });
+
+  renderSimilares(similares);
+}
+
+function renderSimilares(produtos) {
+  const list = $('#similaresList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!produtos.length) {
+    list.innerHTML = '<p class="empty-msg" style="text-align:center;padding:20px">Nenhum produto similar encontrado.</p>';
+    return;
+  }
+
+  produtos.slice(0, 10).forEach(p => {
+    const item = document.createElement('div');
+    item.className = 'user-item'; // Reuse a style of users list for simple rows
+    item.style.display = 'flex';
+    item.style.justifyContent = 'space-between';
+    item.style.alignItems = 'center';
+    item.style.padding = '10px';
+    item.style.background = 'var(--surface2)';
+    item.style.borderRadius = '8px';
+    item.style.borderLeft = `3px solid ${ehMapex(p) ? 'var(--accent)' : 'var(--border)'}`;
+
+    item.innerHTML = `
+      <div>
+        <div style="font-weight:600">${p.nome}${badgeMapex(p)}</div>
+        <div class="muted" style="font-size:12px">${p.marca || '—'} • ${p.categoria || '—'}</div>
+      </div>
+      <button class="btn-ghost" style="padding:4px 8px;font-size:11px" onclick="abrirDetalhesProduto('${p.id}')">
+        <i class="fa-solid fa-eye"></i> Detalhes
+      </button>
+    `;
+    list.appendChild(item);
+  });
 }
 
 function abrirDetalhesProduto(produtoId) {
@@ -1960,34 +2035,20 @@ async function enriquecerListaIA(itens, itensFinais, empresa, opcoes, containerI
   const secundTxt = (empresa.cnaesSecundarios || []).slice(0, 6)
     .map(c => `${c.codigo} (${c.descricao})`).join('; ') || 'nenhum';
 
-  const prompt = `Você é um assistente comercial sênior de uma distribuidora brasileira.
+  const prompt = `Atue como especialista B2B. Reordene os 7 candidatos para os 5 melhores para o cliente:
+Empresa: ${empresa.razao} (${empresa.nomeFantasia || 's/ nome fantasia'})
+Ramo: ${empresa.cnae} — ${empresa.cnaeDesc} (Secundários: ${secundTxt})
+Perfil: ${empresa.porte}, ${empresa.idadeAnos ?? '?'} anos (${empresa.faixaIdade}), ${empresa.cidade}/${empresa.uf}
 
-REGRAS OBRIGATÓRIAS:
-- Avalie CADA produto considerando o contexto real do cliente (porte, ramo, região, idade).
-- Você pode REDUZIR o ranking de um produto (dar score menor) se ele não fizer sentido real, mesmo que o CNAE bata (ex: empilhadeira pra MEI, equipamento industrial caro pra empresa nova).
-- Você pode EXCLUIR um produto se ele for claramente incompatível. Nesse caso, dê score 0 e explique em 1 frase.
-- NÃO invente produtos — use apenas os IDs fornecidos.
+Candidatos (ID | Nome | Marca | Cat | Score | Motivos):
+${itens.map((it, i) => `[${i + 1}] ${it.produto.nome} | ${it.produto.marca} | ${it.produto.categoria} | ${it.score} | ${it.motivo.join(', ')}`).join('\n')}
 
-Empresa cliente:
-- Razão social: ${empresa.razao}
-- Nome fantasia: ${empresa.nomeFantasia || 'não informado'}
-- CNAE principal: ${empresa.cnae} — ${empresa.cnaeDesc}
-- CNAEs secundários: ${secundTxt}
-- Localização: ${empresa.cidade}/${empresa.uf}
-- Porte: ${empresa.porte}
-- Idade: ${empresa.idadeAnos ?? '?'} anos (${empresa.faixaIdade})
-
-Produtos candidatos (com score algorítmico atual):
-${itens.map((it, i) => `[ID ${i + 1}] ${it.produto.nome} | ${it.produto.marca} | Cat: ${it.produto.categoria} | Score atual: ${it.score} | Motivos: ${it.motivo.join(', ')}`).join('\n')}
-
-Tarefa:
-1. Devolva um JSON com a lista REORDENADA, no formato:
-   {"ranking":[{"id":N,"score":0-100,"confianca":"alta"|"media"|"baixa","frase":"…"},{"id":N,"score":…,"confianca":…,"frase":"…"}, …]}
-2. A frase deve ser PT-BR, máx 18 palavras, justificando a recomendação em UMA linha.
-3. Confiança "alta" = match perfeito de CNAE + porte compatível. "media" = match parcial. "baixa" = forçado por categoria/keywords.
-4. Mantenha APENAS os 5 produtos. Se decidir que um produto não deve aparecer, remova-o da lista (você recebe 7 candidatos, devolve 5).
-
-Responda APENAS o JSON puro, sem markdown.`;
+Regras:
+1. Priorize ALINHAMENTO com o ramo/setor do cliente. Se o produto é essencial para o ramo, dê score alto.
+2. Ajuste score por Porte/Idade: penalize itens industriais caros para MEI/novas.
+3. Remova se for claramente incompatível (score 0).
+4. JSON puro (sem markdown): {"ranking":[{"id":N,"score":0-100,"confianca":"alta"|"media"|"baixa","frase":"..."}]}.
+5. Frase: máx 15 palavras, justificando a escolha tecnicamente.`;
 
   try {
     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -2113,7 +2174,10 @@ Responda APENAS o JSON puro, sem markdown.`;
         <div class="top5-actions">
           <div class="top5-score">${it.score}<small>score</small></div>
           ${confHtml}
-          ${p && p.id ? `<button class="btn-card-action" data-ver-detalhes="${p.id}" type="button" title="Ver resumo e quebras de objeção por IA"><i class="fa-solid fa-eye"></i> Ver detalhes</button>` : ''}
+          ${p && p.id ? `
+            <button class="btn-card-action" data-ver-detalhes="${p.id}" type="button" title="Ver resumo e quebras de objeção por IA"><i class="fa-solid fa-eye"></i> Detalhes</button>
+            <button class="btn-card-action" data-ver-similares="${p.id}" type="button" title="Ver produtos similares"><i class="fa-solid fa-shuffle"></i> Similares</button>
+          ` : ''}
         </div>
       `;
       container.appendChild(card);

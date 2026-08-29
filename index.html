@@ -608,6 +608,27 @@
     </div>
   </div>
 
+  <!-- ============== MODAL: PRODUTOS SIMILARES ============== -->
+  <div class="modal-overlay" id="similaresModal" style="display:none">
+    <div class="modal-box">
+      <div class="modal-head">
+        <div>
+          <p class="modal-head-cnpj" id="similaresProdMarca">—</p>
+          <h3 id="similaresProdNome">Produtos Similares</h3>
+        </div>
+        <button class="modal-close" id="btnFecharSimilares" type="button" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <div id="similaresList" class="users-list" style="display:flex;flex-direction:column;gap:10px">
+          <!-- Lista de similares renderizada via JS -->
+        </div>
+      </div>
+      <div class="modal-footer-row" style="display:flex;justify-content:flex-end;gap:8px;padding:14px 24px;border-top:1px solid var(--border)">
+        <button class="btn-ghost" id="btnFecharSimilares2" type="button">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="produtos-seed.js"></script>
   <script src="produtos-arcom-seed.js"></script>
   <script src="produtos-arcom-escolar-seed.js"></script>
