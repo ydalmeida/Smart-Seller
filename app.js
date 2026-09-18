@@ -1877,6 +1877,7 @@ REGRAS:
 - Para cada argumento, devolva: "objeção" (frase curta com a objeção provável do cliente, máx 8 palavras) e "quebra" (1 frase persuasiva em PT-BR, máx 25 palavras, com gancho emocional ou racional que rebata diretamente a objeção).
 - A quebra deve considerar características REAIS do produto (descrição, marca, categoria). NÃO invente especificações.
 - Personalize ao máximo: se o cliente é MEI, use tom acessível; se é empresa consolidada, use tom técnico.
+- IMPORTANTE: NÃO use aspas duplas (") dentro dos textos de "objeção" ou "quebra". Use aspas simples (') se necessário.
 
 Responda APENAS JSON puro, sem markdown:
 {"argumentos":[
@@ -1917,7 +1918,17 @@ Responda APENAS JSON puro, sem markdown:
     } catch (e1) {
       const m = clean.match(/\{[\s\S]*\}/);
       if (!m) throw new Error('Resposta da IA não contém JSON.');
-      parsed = JSON.parse(m[0]);
+      try {
+        parsed = JSON.parse(m[0]);
+      } catch (e2) {
+        // Recuperação final: tenta extrair os argumentos via regex caso haja aspas internas
+        const recovered = recoverArguments(m[0]);
+        if (recovered.length) {
+          parsed = { argumentos: recovered };
+        } else {
+          throw e2;
+        }
+      }
     }
     const args = Array.isArray(parsed.argumentos) ? parsed.argumentos : [];
     if (!args.length) throw new Error('IA devolveu lista vazia de argumentos.');
@@ -2216,6 +2227,21 @@ function nivelConfiancaPorScore(score) {
 }
 
 // Helper mínimo pra evitar quebrar o render se a IA devolver HTML/& raro.
+function recoverArguments(txt) {
+  const args = [];
+  // Tenta extrair pares de objeção/quebra mesmo com aspas internas mal formatadas.
+  // Procura por "objeção":"VALOR","quebra":"VALOR"}
+  const objRegex = /"objeção"\s*:\s*"([\s\S]*?)"\s*,\s*"quebra"\s*:\s*"([\s\S]*?)"\s*\}/g;
+  let match;
+  while ((match = objRegex.exec(txt)) !== null) {
+    args.push({
+      objeção: match[1],
+      quebra: match[2]
+    });
+  }
+  return args;
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
