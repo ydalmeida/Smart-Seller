@@ -67,7 +67,7 @@ const STATE = {
     // Se um dia trocar de projeto, cole as novas credenciais em
     // Configurações → Firebase, ou edite DEFAULT_FIREBASE_CONFIG acima.
     firebase: { ...DEFAULT_FIREBASE_CONFIG },
-    groq: { apiKey: _decodeAdmin(GROQ_APIKEY_ENC), modelo: 'llama-3.1-70b-versatile' },
+    groq: { apiKey: _decodeAdmin(GROQ_APIKEY_ENC), modelo: 'openai/gpt-oss-120b' },
     pesos: { cnae: 50, regiao: 30, prioridade: 10, keywords: 10 }
   }
 };
@@ -317,42 +317,18 @@ $('#btnTema').addEventListener('click', () => {
   localStorage.setItem('cda_top5_tema', novo);
 });
 
-// =========================================================
-// PARTÍCULAS (fundo)
-// =========================================================
-(function initParticulas() {
-  const canvas = $('#particleCanvas');
-  const ctx = canvas.getContext('2d');
-  let w, h, particles = [];
-  function resize() { w = canvas.width = innerWidth; h = canvas.height = innerHeight; }
-  function criar() {
-    particles = [];
-    const n = Math.min(60, Math.floor((w * h) / 25000));
-    for (let i = 0; i < n; i++) {
-      particles.push({
-        x: Math.random() * w, y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
-        r: Math.random() * 1.5 + 0.5, a: Math.random() * 0.3 + 0.1
-      });
-    }
+$('#btnToggleSidebar').addEventListener('click', () => {
+  const sidebar = $('.sidebar');
+  const isCollapsed = sidebar.classList.toggle('collapsed');
+  localStorage.setItem('cda_top5_sidebar', isCollapsed);
+
+  // Atualiza o ícone do botão
+  const icon = $('#btnToggleSidebar').querySelector('i');
+  if (icon) {
+    icon.className = isCollapsed ? 'fa-solid fa-bars' : 'fa-solid fa-angles-left';
   }
-  function draw() {
-    ctx.clearRect(0, 0, w, h);
-    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    particles.forEach(p => {
-      p.x += p.vx; p.y += p.vy;
-      if (p.x < 0 || p.x > w) p.vx *= -1;
-      if (p.y < 0 || p.y > h) p.vy *= -1;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = dark ? `rgba(186,230,79,${p.a})` : `rgba(0,120,64,${p.a * 0.6})`;
-      ctx.fill();
-    });
-    requestAnimationFrame(draw);
-  }
-  resize(); criar(); draw();
-  addEventListener('resize', () => { resize(); criar(); });
-})();
+});
+
 
 // =========================================================
 // FIREBASE (opcional — funciona só se preencher credenciais REAIS)
@@ -959,7 +935,7 @@ async function consultar() {
       uf: cnpj.uf,
       cidade: cnpj.municipio,
       bairro: cnpj.bairro,
-      logradouro: `${cnpj.descricao_tipo_de_logradouro} ${cnpj.logradouro}, ${cnpj.numero}`,
+      logradouro: [cnpj.descricao_tipo_de_logradouro, cnpj.logradouro].filter(Boolean).join(' ') + (cnpj.numero ? `, ${cnpj.numero}` : ''),
       cep: cnpj.cep,
       status: cnpj.descricao_situacao_cadastral,
       porte: cnpj.porte,
@@ -1526,6 +1502,29 @@ function abrirDetalhes() {
     ? `${empresa.logradouro} — ${empresa.bairro || ''} — ${empresa.cidade || ''}/${empresa.uf || ''} (CEP ${empresa.cep || bruto.cep || '—'})`
     : '—';
 
+  // Link para Google Maps
+  const btnMaps = $('#btnMaps');
+  if (btnMaps) {
+    if (empresa.logradouro || empresa.cep) {
+      // Monta o endereço removendo valores vazios para evitar strings como "Rua X, null, Cidade"
+      const partes = [
+        empresa.logradouro,
+        empresa.bairro,
+        empresa.cidade,
+        empresa.uf,
+        empresa.cep
+      ].filter(p => p && p !== '—');
+
+      const fullAddress = `${partes.join(', ')}, Brasil`;
+
+      // Usamos a URL de busca do Google Maps que dispara a melhor correspondência e habilita o Street View
+      btnMaps.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`;
+      btnMaps.style.display = 'inline-flex';
+    } else {
+      btnMaps.style.display = 'none';
+    }
+  }
+
   // Telefone da Receita Federal: BrasilAPI traz ddd_telefone_1 e ddd_telefone_2
   const tel1 = bruto.ddd_telefone_1 ? fmtTelefoneBr(bruto.ddd_telefone_1) : null;
   const tel2 = bruto.ddd_telefone_2 ? fmtTelefoneBr(bruto.ddd_telefone_2) : null;
@@ -1593,7 +1592,6 @@ Responda APENAS JSON puro, sem markdown:
       body: JSON.stringify({
         model: STATE.config.groq.modelo || 'llama-3.1-70b-versatile',
         // Habilita a busca na web nativa da Groq (modelos com search)
-        tools: [{ type: 'browser_search' }],
         messages: [
           { role: 'system', content: 'Você é um assistente que busca telefones na web. Responda APENAS JSON válido, sem markdown.' },
           { role: 'user', content: prompt }
@@ -2516,7 +2514,15 @@ $('#btnTestarGroq').addEventListener('click', async () => {
         max_tokens: 5
       })
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+      if (r.status === 404) {
+        throw new Error('URL da API não encontrada (404). Verifique se o modelo selecionado é válido.');
+      }
+      if (r.status === 401) {
+        throw new Error('API Key inválida (401). Verifique a chave.');
+      }
+      throw new Error(`Erro HTTP ${r.status}: ${await r.text()}`);
+    }
     $('#groqStatus').textContent = '✓ Conexão OK';
     toast('Groq funcionando!', 'success');
   } catch (e) {

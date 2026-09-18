@@ -18,9 +18,6 @@
 </head>
 <body>
 
-  <!-- Canvas de partículas (fundo premium) -->
-  <canvas id="particleCanvas"></canvas>
-
   <!-- ============== SPLASH (BOAS-VINDAS) ============== -->
   <div id="splashOverlay" class="splash-overlay">
     <div class="splash-content">
@@ -113,8 +110,9 @@
   <!-- ============== APP PRINCIPAL ============== -->
   <div id="appRoot" class="app" style="display:none">
 
-    <!-- TOPBAR -->
+  <!-- TOPBAR -->
     <header class="topbar">
+      <button class="topbar-btn" id="btnToggleSidebar" title="Recolher menu"><i class="fa-solid fa-bars"></i></button>
       <a class="topbar-brand" href="#">
         <img src="logo.png" alt="Smart Seller" class="topbar-logo">
         <span>Smart <strong>Seller</strong></span>
@@ -366,10 +364,10 @@
               <label class="field"><span>API Key Groq</span><input id="groqKey" type="password" placeholder="gsk_…"></label>
               <label class="field"><span>Modelo</span>
                 <select id="groqModel">
-                  <option value="llama-3.1-70b-versatile">llama-3.1-70b-versatile (Recomendado)</option>
-                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Mais rápido)</option>
-                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
-                  <option value="gemma2-9b-it">gemma2-9b-it</option>
+                  <option value="openai/gpt-oss-120b">GPT-OSS 120B (Melhor Raciocínio)</option>
+                  <option value="openai/gpt-oss-20b">GPT-OSS 20B (Mais Rápido)</option>
+                  <option value="qwen/qwen3.6-27b">Qwen 3.6 27B (Equilibrado)</option>
+                  <option value="mixtral-8x7b-32768">Mixtral 8x7B (Estável)</option>
                 </select>
               </label>
             </div>
@@ -529,7 +527,15 @@
             <div class="detalhe-field"><label>Natureza jurídica</label><p id="detalheNatureza">—</p></div>
             <div class="detalhe-field"><label>Data de abertura</label><p id="detalheAbertura">—</p></div>
             <div class="detalhe-field"><label>Capital social</label><p id="detalheCapital">—</p></div>
-            <div class="detalhe-field" style="grid-column:1/-1"><label>Endereço</label><p id="detalheEndereco">—</p></div>
+            <div class="detalhe-field" style="grid-column:1/-1">
+              <label>Endereço</label>
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+                <p id="detalheEndereco" style="margin:0">—</p>
+                <a id="btnMaps" href="#" target="_blank" class="btn-ghost" style="padding:4px 8px; font-size:12px; white-space:nowrap; text-decoration:none" title="Abrir endereço no Google Maps">
+                  <i class="fa-solid fa-location-dot"></i> Google Maps
+                </a>
+              </div>
+            </div>
           </div>
         </div>
 
